@@ -5,6 +5,7 @@ import { DatasetProvider } from "./contexts/DatasetContext";
 import { ToastProvider } from "./contexts/ToastContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Login from "./components/auth/Login";
+import Register from "./components/auth/Register";
 import LandingPage from "./pages/LandingPage";
 import DatasetsPage from "./pages/DatasetsPage";
 import DatasetGalleryPage from "./pages/DatasetGalleryPage";
@@ -22,6 +23,7 @@ function App() {
         <Router basename={process.env.PUBLIC_URL || ""}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
             <Route path="/" element={<LandingPage />} />
             <Route path="/docs" element={<DocumentationPage />} />
             <Route path="/models" element={<ModelZooPage />} />

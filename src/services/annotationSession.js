@@ -71,7 +71,7 @@ const getWsBaseUrl = () => {
     }
   }
 
-  return 'ws://localhost:8000';
+  return 'ws://localhost:4001';
 };
 
 /**
