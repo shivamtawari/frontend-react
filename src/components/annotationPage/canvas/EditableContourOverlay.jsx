@@ -3,31 +3,67 @@ import { Stage, Layer, Circle, Line } from 'react-konva';
 import {
   useEditModeActive,
   useEditModeDraftCoordinates,
+  useEditModeVertices,
   useImageObject,
   useRefinementModeActive,
+  useMoveVertex,
+  useInsertVertex,
+  useDeleteVertex,
 } from '../../../stores/selectors/annotationSelectors';
 import { useContourEditing } from '../../../hooks/useContourEditing';
+import { nearestEdge } from '../../../utils/contourEditing';
 
 /**
- * EditableContourOverlay Component
- * Renders interactive control points on top of the contour being edited
- * Uses Konva for smooth dragging and rendering
+ * EditableContourOverlay
+ *
+ * Renders the manual contour editor: a smooth closed outline (the dense
+ * `draftCoordinates`) plus a handful of draggable **control vertices**. Drag a
+ * vertex to reshape, click the outline to add a vertex where you need finer
+ * control, double-click a vertex to remove it. All geometry is normalized [0,1].
  */
 const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, y: 0 } }) => {
   const editModeActive = useEditModeActive();
   const draftCoordinates = useEditModeDraftCoordinates();
+  const vertices = useEditModeVertices();
   const imageObject = useImageObject();
   const refinementModeActive = useRefinementModeActive();
-  
-  const { updatePoint, saveEditing, cancelEditing, resetChanges, isDirty, scheduleAutoSave, cancelAutoSave } = useContourEditing();
-  
+
+  const moveVertex = useMoveVertex();
+  const insertVertex = useInsertVertex();
+  const deleteVertex = useDeleteVertex();
+
+  const { cancelEditing, resetChanges, scheduleAutoSave, cancelAutoSave } = useContourEditing();
+
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0, x: 0, y: 0 });
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const containerRef = useRef(null);
   const pointsWrapperRef = useRef(null);
-  
-  // Reduce control points to a manageable number (max ~30 handles)
-  const decimationFactor = Math.max(1, Math.floor((draftCoordinates?.x?.length || 0) / 30));
+  // Konva Stage nodes, so their backing-store resolution can track the zoom.
+  const singleStageRef = useRef(null);
+  const pointsStageRef = useRef(null);
+  const lineStageRef = useRef(null);
+
+  // Keep the overlay crisp when zoomed. The wrapper is CSS-scaled by `zoomLevel`,
+  // which would upscale (blur) a fixed-resolution canvas — so bump each Konva
+  // canvas's pixelRatio by the zoom to render at the displayed density instead.
+  useEffect(() => {
+    const pr = Math.min(4, (window.devicePixelRatio || 1) * (zoomLevel > 0 ? zoomLevel : 1));
+    const apply = (stage) => {
+      if (!stage) return;
+      try {
+        stage.getLayers().forEach((layer) => {
+          const canvas = layer.getCanvas();
+          if (canvas && canvas.getPixelRatio() !== pr) canvas.setPixelRatio(pr);
+        });
+        stage.batchDraw();
+      } catch {
+        /* stage torn down mid-update — nothing to do */
+      }
+    };
+    apply(singleStageRef.current);
+    apply(pointsStageRef.current);
+    apply(lineStageRef.current);
+  }, [zoomLevel, editModeActive, refinementModeActive]);
 
   // Calculate rendered image dimensions
   useEffect(() => {
@@ -39,7 +75,7 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
 
       const containerWidth = container.offsetWidth;
       const containerHeight = container.offsetHeight;
-      
+
       if (containerWidth === 0 || containerHeight === 0 || !imageObject.width || !imageObject.height) {
         return;
       }
@@ -174,49 +210,57 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
     }
   }, [forwardNativeEvent]);
 
-  if (!editModeActive || !draftCoordinates || !imageObject || imageDimensions.width === 0) {
+  if (!editModeActive || !draftCoordinates || !vertices || !imageObject || imageDimensions.width === 0) {
     return null;
   }
 
-  // Convert ALL coordinates to screen coordinates (for accurate line)
-  const allPointsInPixels = draftCoordinates.x.map((x, i) => ({
-    x: x * imageDimensions.width + imageDimensions.x,
-    y: draftCoordinates.y[i] * imageDimensions.height + imageDimensions.y,
-    index: i,
-  }));
-  
-  // Show fewer CONTROL HANDLES for cleaner UI (every Nth point)
-  const controlHandles = allPointsInPixels.filter((_, i) => i % decimationFactor === 0);
+  const toScreenX = (nx) => nx * imageDimensions.width + imageDimensions.x;
+  const toScreenY = (ny) => ny * imageDimensions.height + imageDimensions.y;
+  const toNormX = (sx) => (sx - imageDimensions.x) / imageDimensions.width;
+  const toNormY = (sy) => (sy - imageDimensions.y) / imageDimensions.height;
 
-  // Draw line with ALL points for accuracy (flat array: [x1, y1, x2, y2, ...])
-  const linePoints = allPointsInPixels.flatMap(p => [p.x, p.y]);
+  // The smooth outline: every dense draft point (straight segments between them
+  // trace the resampled Catmull-Rom curve).
+  const linePoints = draftCoordinates.x.flatMap((x, i) => [toScreenX(x), toScreenY(draftCoordinates.y[i])]);
+
+  // The handles: one per control vertex.
+  const handles = vertices.x.map((x, i) => ({ x: toScreenX(x), y: toScreenY(vertices.y[i]), index: i }));
+  const handleScreenXs = handles.map((h) => h.x);
+  const handleScreenYs = handles.map((h) => h.y);
 
   // Scale point sizes so they stay visually consistent regardless of zoom level.
-  // The outer div has CSS transform scale(zoomLevel), so dividing by zoomLevel
-  // keeps the on-screen pixel size constant at the base values.
   const safeZoom = zoomLevel > 0 ? zoomLevel : 1;
   const visiblePointRadius = Math.max(2, 5 / safeZoom);
-  const hoveredPointRadius = Math.max(2.5, 6 / safeZoom);
-  const hitboxRadius = Math.max(8, 20 / safeZoom);
+  const hoveredPointRadius = Math.max(2.5, 7 / safeZoom);
+  const hitboxRadius = Math.max(8, 18 / safeZoom);
+  // How close (on-screen px) a click must land to the outline to insert a vertex.
+  const insertThreshold = 16 / safeZoom;
 
-  // Handle point drag with smooth interpolation and auto-save scheduling
   const handlePointDragMove = (index, e) => {
     const stage = e.target.getStage();
     const pointerPos = stage.getPointerPosition();
-    
-    // Convert screen coordinates back to normalized (0-1)
-    const normalizedX = (pointerPos.x - imageDimensions.x) / imageDimensions.width;
-    const normalizedY = (pointerPos.y - imageDimensions.y) / imageDimensions.height;
-    
-    // Clamp to [0, 1]
-    const clampedX = Math.max(0, Math.min(1, normalizedX));
-    const clampedY = Math.max(0, Math.min(1, normalizedY));
-    
-    // Pass decimation factor for smooth interpolation between control points
-    updatePoint(index, clampedX, clampedY, decimationFactor);
+    const clampedX = Math.max(0, Math.min(1, toNormX(pointerPos.x)));
+    const clampedY = Math.max(0, Math.min(1, toNormY(pointerPos.y)));
+    moveVertex(index, clampedX, clampedY);
+    // Auto-save resets the idle timer on every drag; editing is fully auto-saved.
+    scheduleAutoSave();
+  };
 
-    // Schedule auto-save: resets the idle timer on every drag event.
-    // Editing is now fully auto-saved; there is no manual Save/Reset/Discard panel.
+  const handleDeleteVertex = (index) => {
+    if (vertices.x.length <= 3) return; // A closed shape needs at least three.
+    deleteVertex(index);
+    scheduleAutoSave();
+  };
+
+  // Click on empty canvas: if it lands on the outline, insert a vertex there.
+  const handleStageClick = (e) => {
+    if (e.target !== e.target.getStage()) return; // clicks on handles are theirs.
+    const stage = e.target.getStage();
+    const pointerPos = stage.getPointerPosition();
+    if (!pointerPos) return;
+    const { index, distance } = nearestEdge(handleScreenXs, handleScreenYs, pointerPos);
+    if (distance > insertThreshold) return; // clicked away from the outline — ignore.
+    insertVertex(index, toNormX(pointerPos.x), toNormY(pointerPos.y));
     scheduleAutoSave();
   };
 
@@ -232,62 +276,51 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
 
   const lineLayer = (
     <Layer listening={false}>
-      <Line
-        points={linePoints}
-        stroke="#3b82f6"
-        strokeWidth={2}
-        closed={true}
-        tension={0.4}
-      />
+      <Line points={linePoints} stroke="#3b82f6" strokeWidth={Math.max(1, 2 / safeZoom)} closed tension={0} />
     </Layer>
   );
 
-  const pointsLayer = (
-    <Layer>
-      {controlHandles.map((point) => {
-        const isHovered = hoveredPoint === point.index;
-        return (
-          <React.Fragment key={point.index}>
-            <Circle
-              x={point.x}
-              y={point.y}
-              radius={hitboxRadius}
-              fill="transparent"
-              draggable
-              onDragMove={(e) => handlePointDragMove(point.index, e)}
-              onMouseEnter={(e) => {
-                const container = e.target.getStage().container();
-                container.style.cursor = 'grab';
-                setHoveredPoint(point.index);
-              }}
-              onMouseLeave={(e) => {
-                const container = e.target.getStage().container();
-                container.style.cursor = 'default';
-                setHoveredPoint(null);
-              }}
-              onDragStart={(e) => {
-                const container = e.target.getStage().container();
-                container.style.cursor = 'grabbing';
-              }}
-              onDragEnd={(e) => {
-                const container = e.target.getStage().container();
-                container.style.cursor = 'grab';
-              }}
-            />
-            <Circle
-              x={point.x}
-              y={point.y}
-              radius={isHovered ? hoveredPointRadius : visiblePointRadius}
-              fill="#3b82f6"
-              stroke="#ffffff"
-              strokeWidth={Math.max(1, 2 / safeZoom)}
-              listening={false}
-            />
-          </React.Fragment>
-        );
-      })}
-    </Layer>
-  );
+  const renderHandle = (point) => {
+    const isHovered = hoveredPoint === point.index;
+    return (
+      <React.Fragment key={point.index}>
+        <Circle
+          x={point.x}
+          y={point.y}
+          radius={hitboxRadius}
+          fill="transparent"
+          draggable
+          onDragMove={(e) => handlePointDragMove(point.index, e)}
+          onDblClick={() => handleDeleteVertex(point.index)}
+          onMouseEnter={(e) => {
+            e.target.getStage().container().style.cursor = 'grab';
+            setHoveredPoint(point.index);
+          }}
+          onMouseLeave={(e) => {
+            e.target.getStage().container().style.cursor = 'default';
+            setHoveredPoint(null);
+          }}
+          onDragStart={(e) => {
+            e.target.getStage().container().style.cursor = 'grabbing';
+          }}
+          onDragEnd={(e) => {
+            e.target.getStage().container().style.cursor = 'grab';
+          }}
+        />
+        <Circle
+          x={point.x}
+          y={point.y}
+          radius={isHovered ? hoveredPointRadius : visiblePointRadius}
+          fill={isHovered ? '#2563eb' : '#3b82f6'}
+          stroke="#ffffff"
+          strokeWidth={Math.max(1, 2 / safeZoom)}
+          listening={false}
+        />
+      </React.Fragment>
+    );
+  };
+
+  const pointsLayer = <Layer>{handles.map(renderHandle)}</Layer>;
 
   // In refinement mode: line below (z-55, non-interactive) so prompt canvas (z-62) can receive clicks; points above (z-65) so they remain draggable
   if (refinementModeActive) {
@@ -298,7 +331,7 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
           className="absolute inset-0 pointer-events-none"
           style={{ ...transformStyle, zIndex: 55 }}
         >
-          <Stage {...stageProps} listening={false}>
+          <Stage {...stageProps} listening={false} ref={lineStageRef}>
             {lineLayer}
           </Stage>
         </div>
@@ -309,6 +342,7 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
         >
           <Stage
             {...stageProps}
+            ref={pointsStageRef}
             className="pointer-events-auto"
             onMouseDown={handlePointsStageMouseDown}
             onMouseMove={handlePointsStageMouseMove}
@@ -324,17 +358,26 @@ const EditableContourOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, 
   }
 
   return (
-    // Single overlay when not in refinement mode
-    <div
-      ref={containerRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ ...transformStyle, zIndex: 60 }}
-    >
-      <Stage {...stageProps} className="pointer-events-auto">
-        {lineLayer}
-        {pointsLayer}
-      </Stage>
-    </div>
+    <>
+      {/* Single overlay when not in refinement mode */}
+      <div
+        ref={containerRef}
+        className="absolute inset-0 pointer-events-none"
+        style={{ ...transformStyle, zIndex: 60 }}
+      >
+        <Stage {...stageProps} ref={singleStageRef} className="pointer-events-auto" onClick={handleStageClick} onTap={handleStageClick}>
+          {lineLayer}
+          {pointsLayer}
+        </Stage>
+      </div>
+
+      {/* Discoverability hint for the insert/delete gestures. */}
+      <div
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[62] pointer-events-none px-3 py-1.5 rounded-lg bg-gray-900/80 text-white text-xs font-medium shadow-lg backdrop-blur-sm"
+      >
+        Drag a point to reshape · Click the outline to add a point · Double-click a point to remove · Esc to discard
+      </div>
+    </>
   );
 };
 

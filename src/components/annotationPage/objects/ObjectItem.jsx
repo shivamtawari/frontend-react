@@ -34,6 +34,8 @@ import annotationSession from '../../../services/annotationSession';
 import { getContourId } from '../../../utils/objectUtils';
 import { deleteObject } from '../../../utils/objectOperations';
 import { hasValidLabel } from '../../../stores/utils/labelValidation';
+import { useCurrentMaskId } from '../../../stores/selectors/annotationSelectors';
+import RejectMaskModal from '../modals/RejectMaskModal';
 import ObjectActions from './ObjectActions';
 import ObjectStatsPopover from './ObjectStatsPopover';
 import ReviewedByBadge from './ReviewedByBadge';
@@ -60,6 +62,8 @@ const ObjectItem = ({ object, hasChildren = false, isExpanded = true, onToggleEx
   const setPanOffset = useSetPanOffset();
   const objectsList = useObjectsList();
   const focusModeObjectId = useFocusModeObjectId();
+  const currentMaskId = useCurrentMaskId();
+  const [showSendBackModal, setShowSendBackModal] = useState(false);
 
   // The labels selectable for this object are dictated by its level in the
   // hierarchy: root labels at the top level, or the children of the parent
@@ -452,6 +456,13 @@ const ObjectItem = ({ object, hasChildren = false, isExpanded = true, onToggleEx
     }
   };
 
+  // Sending one object back is a review action that records a reason, unlike
+  // handleReject above which simply discards an unwanted suggestion.
+  const handleSendBack = (e) => {
+    e?.stopPropagation();
+    setShowSendBackModal(true);
+  };
+
   const handleMarkAsReviewed = async (e) => {
     e?.stopPropagation();
     await markAsReviewed(object);
@@ -530,8 +541,10 @@ const ObjectItem = ({ object, hasChildren = false, isExpanded = true, onToggleEx
             isReviewed={isReviewed}
             isReviewable={isReviewable}
             isVisible={isVisible}
+            dataset={currentDataset}
             onAccept={handleAccept}
             onReject={handleReject}
+            onSendBack={currentMaskId ? handleSendBack : undefined}
             onMarkAsReviewed={handleMarkAsReviewed}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -539,6 +552,17 @@ const ObjectItem = ({ object, hasChildren = false, isExpanded = true, onToggleEx
           />
         </div>
       </div>
+
+      {/* Send-back modal, scoped to this one object */}
+      {currentMaskId && (
+        <RejectMaskModal
+          isOpen={showSendBackModal}
+          maskId={currentMaskId}
+          contourId={getContourId(object)}
+          contourLabel={object?.label_name || object?.label}
+          onClose={() => setShowSendBackModal(false)}
+        />
+      )}
 
       {/* Label Selection Modal */}
       <LabelSelectionModal

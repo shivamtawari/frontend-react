@@ -17,8 +17,11 @@ const MIN_SKETCH_DIST_PX = 4; // minimum spacing between captured freehand point
  * @param {Function} params.stageToImageCoords - Maps stage px -> {imageX, imageY}
  * @param {Function} params.getScale - Returns the current stage scale (px per image px)
  * @param {Function} params.onFinalize - Called with (points, { freehand }) on completion
+ * @param {number} [params.minPoints=3] - Fewest points a completed shape needs (2 for an open line)
+ * @param {boolean} [params.closeOnFirst=true] - Polygon closes when clicking near the first vertex
+ *   (turn off for open lines, which finish on double-click / Enter instead)
  */
-const usePromptDrawing = ({ mode, stageToImageCoords, getScale, onFinalize }) => {
+const usePromptDrawing = ({ mode, stageToImageCoords, getScale, onFinalize, minPoints = 3, closeOnFirst = true }) => {
   const [polygonPoints, setPolygonPoints] = useState([]);
   const [cursorImagePt, setCursorImagePt] = useState(null); // live vertex for the rubber band
   const [isSketching, setIsSketching] = useState(false); // freehand drag in progress
@@ -44,9 +47,9 @@ const usePromptDrawing = ({ mode, stageToImageCoords, getScale, onFinalize }) =>
   const finalize = useCallback((ptsArg, freehand = false) => {
     const pts = ptsArg || pointsRef.current;
     resetDrawing();
-    if (!pts || pts.length < 3) return;
+    if (!pts || pts.length < minPoints) return;
     onFinalize(pts.map((p) => ({ x: p.x, y: p.y })), { freehand });
-  }, [onFinalize, resetDrawing]);
+  }, [onFinalize, resetDrawing, minPoints]);
 
   const handleMouseDown = useCallback((e) => {
     const stage = e.target.getStage();
@@ -72,7 +75,7 @@ const usePromptDrawing = ({ mode, stageToImageCoords, getScale, onFinalize }) =>
     if (e.evt.button !== 0) return;
 
     const existing = pointsRef.current;
-    if (existing.length >= 3) {
+    if (closeOnFirst && existing.length >= 3) {
       // Close the shape when clicking near the first vertex
       const first = existing[0];
       const scale = getScale();
@@ -84,7 +87,7 @@ const usePromptDrawing = ({ mode, stageToImageCoords, getScale, onFinalize }) =>
       }
     }
     setPolygonPoints((pts) => [...pts, pt]);
-  }, [mode, stageToImageCoords, getScale, finalize]);
+  }, [mode, stageToImageCoords, getScale, finalize, closeOnFirst]);
 
   const handleMouseMove = useCallback((e) => {
     const stage = e.target.getStage();

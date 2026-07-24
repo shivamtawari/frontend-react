@@ -6,7 +6,6 @@ import {
   useEditModeIsDirty,
   useEditModeObjectId,
   useEnterEditMode,
-  useUpdateDraftPoint,
   useResetDraft,
   useExitEditMode,
   useUpdateObject,
@@ -29,7 +28,6 @@ export const useContourEditing = () => {
 
   // Actions
   const enterEditMode = useEnterEditMode();
-  const updateDraftPoint = useUpdateDraftPoint();
   const resetDraft = useResetDraft();
   const exitEditMode = useExitEditMode();
   const updateObject = useUpdateObject();
@@ -65,21 +63,6 @@ export const useContourEditing = () => {
     
     enterEditMode(objectId, contourId, x, y);
   }, [enterEditMode]);
-
-  /**
-   * Update a single point in the draft contour with interpolation
-   * @param {number} pointIndex - Index of the point to update
-   * @param {number} normalizedX - New x coordinate (normalized 0-1)
-   * @param {number} normalizedY - New y coordinate (normalized 0-1)
-   * @param {number} decimationFactor - Factor for point decimation 
-   */
-  const updatePoint = useCallback((pointIndex, normalizedX, normalizedY, decimationFactor = 1) => {
-    if (!isEditModeActive) {
-      return;
-    }
-    
-    updateDraftPoint(pointIndex, normalizedX, normalizedY, decimationFactor);
-  }, [isEditModeActive, updateDraftPoint]);
 
   /**
    * Cancel editing and revert to original coordinates
@@ -224,7 +207,6 @@ export const useContourEditing = () => {
     
     // Actions
     startEditing,
-    updatePoint,
     cancelEditing,
     resetChanges,
     saveEditing,

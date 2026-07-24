@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import MainLayout from '../components/annotationPage/layout/MainLayout';
 import ResponsiveWrapper from '../components/annotationPage/layout/ResponsiveWrapper';
 import DatasetLoader from '../components/annotationPage/layout/DatasetLoader';
@@ -12,13 +12,15 @@ import useModelPreloader from '../hooks/useModelPreloader';
 import { useSetObjectsFromHierarchy, useClearObjects, useSetAnnotationStatus, useSetDatasetLabels, useDatasetLabelsMap, useDatasetLabels, useFetchAvailablePromptedModels, useAvailablePromptedModels } from '../stores/selectors/annotationSelectors';
 import { useCurrentImageId } from '../stores/selectors/annotationSelectors';
 import { useDataset } from '../contexts/DatasetContext';
+import { usePermissions } from '../hooks/usePermissions';
+import { Permission } from '../utils/permissions';
 import { fetchLabels } from '../api/labels';
 import { extractLabelsFromResponse } from '../utils/labelHierarchy';
 import { SERVER_MESSAGE_TYPES } from '../utils/messageTypes';
 import websocketService from '../services/websocket';
 
 const AnnotationPageV2 = () => {
-  const { imageId: urlImageId } = useParams();
+  const { datasetId, imageId: urlImageId } = useParams();
   // Get imageId from store (set by DatasetLoader when no URL imageId is present)
   const storeImageId = useCurrentImageId();
   
@@ -41,7 +43,15 @@ const AnnotationPageV2 = () => {
   const setDatasetLabels = useSetDatasetLabels();
   const cachedLabelsMap = useDatasetLabelsMap();
   const cachedLabels = useDatasetLabels();
-  const { currentDataset } = useDataset();
+  const { currentDataset, datasets } = useDataset();
+  // Resolve from the list rather than currentDataset: the list entries carry
+  // my_permissions, and currentDataset may not be the one in the URL yet.
+  const routeDataset = React.useMemo(
+    () => datasets?.find((d) => String(d.id) === String(datasetId)) || null,
+    [datasets, datasetId]
+  );
+  const { can } = usePermissions(routeDataset);
+  const canAnnotate = can(Permission.ANNOTATION_CREATE);
   const [hierarchyData, setHierarchyData] = React.useState(null); // Use state instead of ref to trigger re-renders
 
   // Helper: ensure labels are loaded (uses cache, fetches only once per dataset)
@@ -87,7 +97,10 @@ const AnnotationPageV2 = () => {
   const { isReady, sessionState, runningServices, failedServices } = useAnnotationSession(
     imageId,
     {
-      autoConnect: true,
+      // Don't even attempt the socket without annotation rights — the server
+      // refuses it, and the redirect below sends those users to the read-only
+      // viewer. Connecting first would just log a refusal and fire an error toast.
+      autoConnect: canAnnotate,
       onSessionReady: async (data) => {
         // Populate objects from backend provided hierarchy when available
         if (data && data.objects) {
@@ -142,6 +155,16 @@ const AnnotationPageV2 = () => {
       loadObjectsWithLabels(hierarchyData, currentDataset);
     }
   }, [currentDataset, hierarchyData, loadObjectsWithLabels]);
+
+  // Without annotation rights the WebSocket session is refused, and that session
+  // is what delivers the contours — so this page would render an empty canvas
+  // forever. Send those users to the read-only viewer, which fetches over REST.
+  if (datasetId && datasets?.length > 0 && !canAnnotate) {
+    const target = urlImageId
+      ? `/dataset/${datasetId}/view/${urlImageId}`
+      : `/dataset/${datasetId}/view`;
+    return <Navigate to={target} replace />;
+  }
 
   return (
     <DatasetLoader>

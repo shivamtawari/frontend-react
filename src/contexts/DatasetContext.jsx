@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import * as api from '../api';
+import { emptyStatusCounts } from '../utils/imageStatus';
 import { useAuth } from './AuthContext';
 
 const DatasetContext = createContext();
@@ -27,10 +28,20 @@ export const DatasetProvider = ({ children }) => {
       const response = await api.fetchDatasets();
       if (response.success) {
         setDatasets(response.datasets);
-        // If no current dataset is selected and datasets exist, select the first one
-        if (!currentDataset && response.datasets.length > 0) {
-          setCurrentDataset(response.datasets[0]);
-        }
+        // Both the initial selection and the re-sync happen inside one functional
+        // update. Reading the previous dataset from `prev` rather than from the
+        // enclosing scope is what keeps this callback dependency-free: depending on
+        // `currentDataset` here made every fetch rebuild `fetchDatasets`, which the
+        // init effect below lists as a dependency, so the effect re-fired and fetched
+        // again — an endless /datasets/all -> images -> thumbnails loop that never
+        // let the page finish loading.
+        setCurrentDataset((prev) => {
+          if (!prev) return response.datasets.length > 0 ? response.datasets[0] : null;
+          // Re-sync the selected dataset from the fresh list so `my_role` and
+          // `my_permissions` reflect the latest grant rather than whatever they
+          // were when it was first opened.
+          return response.datasets.find((d) => d.id === prev.id) || prev;
+        });
         return response.datasets;
       }
       return [];
@@ -41,36 +52,35 @@ export const DatasetProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentDataset]);
+  }, []);
 
-  // Get annotation progress for a dataset
-  const getAnnotationProgress = async (datasetId) => {
+  // Get annotation progress for a dataset.
+  // Memoised because consumers list it in effect dependency arrays (see
+  // useDatasetGalleryData) — an unstable identity there re-fires the fetch on
+  // every single provider render.
+  const getAnnotationProgress = useCallback(async (datasetId) => {
+    // Spreading the backend's counts over a zeroed template keeps this working
+    // when a status is added server-side (as `rejected` was) without listing
+    // each key by hand here.
+    const empty = { ...emptyStatusCounts(), total: 0 };
     try {
       const response = await api.getAnnotationProgress(datasetId);
       if (response.success) {
-        const statusCounts = response.num_masks_with_status || {};
-        const notStarted = statusCounts.not_started || 0;
-        const inProgress = statusCounts.in_progress || 0;
-        const reviewable = statusCounts.reviewable || 0;
-        const finished = statusCounts.finished || 0;
-        
         return {
-          not_started: notStarted,
-          in_progress: inProgress,
-          reviewable: reviewable,
-          finished: finished,
-          total: response.total_images || 0
+          ...empty,
+          ...(response.num_masks_with_status || {}),
+          total: response.total_images || 0,
         };
       }
-      return { not_started: 0, in_progress: 0, reviewable: 0, finished: 0, total: 0 };
+      return empty;
     } catch (err) {
       console.error('Error fetching annotation progress:', err);
-      return { not_started: 0, in_progress: 0, reviewable: 0, finished: 0, total: 0 };
+      return empty;
     }
-  };
+  }, []);
 
   // Get sample images for a dataset
-  const getSampleImages = async (datasetId, limit = 4) => {
+  const getSampleImages = useCallback(async (datasetId, limit = 4) => {
     try {
       const images = await api.getSampleImages(datasetId, limit);
       return images;
@@ -78,10 +88,10 @@ export const DatasetProvider = ({ children }) => {
       console.error('Error fetching sample images:', err);
       return [];
     }
-  };
+  }, []);
 
   // Create a new dataset
-  const createDataset = async (name, description, datasetType = 'image') => {
+  const createDataset = useCallback(async (name, description, datasetType = 'image') => {
     setLoading(true);
     setError(null);
     try {
@@ -99,20 +109,19 @@ export const DatasetProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchDatasets]);
 
   // Delete a dataset
-  const deleteDataset = async (datasetId) => {
+  const deleteDataset = useCallback(async (datasetId) => {
     setLoading(true);
     setError(null);
     try {
       const response = await api.deleteDataset(datasetId);
       if (response.success) {
         await fetchDatasets(); // Refresh the list
-        // If the deleted dataset was the current one, clear it
-        if (currentDataset && currentDataset.id === datasetId) {
-          setCurrentDataset(null);
-        }
+        // If the deleted dataset was the current one, clear it. Functional form so
+        // this callback needs no `currentDataset` dependency.
+        setCurrentDataset((prev) => (prev && prev.id === datasetId ? null : prev));
         return response;
       }
       throw new Error(response.message || 'Failed to delete dataset');
@@ -123,12 +132,12 @@ export const DatasetProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchDatasets]);
 
   // Select a dataset
-  const selectDataset = (dataset) => {
+  const selectDataset = useCallback((dataset) => {
     setCurrentDataset(dataset);
-  };
+  }, []);
 
   // Initialize datasets when authenticated
   useEffect(() => {
@@ -142,7 +151,9 @@ export const DatasetProvider = ({ children }) => {
     }
   }, [isAuthenticated, authLoading, fetchDatasets]);
 
-  const value = {
+  // Memoised so a provider re-render does not hand every consumer a brand-new
+  // context object — several of them spread these callbacks into effect deps.
+  const value = useMemo(() => ({
     datasets,
     currentDataset,
     loading,
@@ -154,7 +165,18 @@ export const DatasetProvider = ({ children }) => {
     getAnnotationProgress,
     getSampleImages,
     setError
-  };
+  }), [
+    datasets,
+    currentDataset,
+    loading,
+    error,
+    fetchDatasets,
+    createDataset,
+    deleteDataset,
+    selectDataset,
+    getAnnotationProgress,
+    getSampleImages
+  ]);
 
   return (
     <DatasetContext.Provider value={value}>

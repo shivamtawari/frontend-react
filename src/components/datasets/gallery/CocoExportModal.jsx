@@ -1,18 +1,32 @@
-import React, { useState } from "react";
-import { Download, X, Loader2, Package, FileJson } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Download, X, Loader2, Lock, Package, FileJson } from "lucide-react";
 import { downloadCocoExport } from "../../../api";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { Permission } from "../../../utils/permissions";
 
 /**
  * Modal for exporting a dataset to COCO format. Lets the user choose whether to
  * bundle images, and which annotations to include, then triggers the download.
+ *
+ * Bundling the raw imagery needs `export.images` on top of `export.annotations`,
+ * so collaborators can be given the measurements without the pixels leaving the
+ * platform.
  */
 const CocoExportModal = ({ isOpen, onClose, dataset }) => {
-  const [includeImages, setIncludeImages] = useState(true);
+  const { can } = usePermissions(dataset);
+  const canExportImages = can(Permission.EXPORT_IMAGES);
+
+  const [includeImages, setIncludeImages] = useState(canExportImages);
   const [excludeUnreviewed, setExcludeUnreviewed] = useState(true);
   const [excludeNotFullyAnnotated, setExcludeNotFullyAnnotated] = useState(true);
   const [contourSelection, setContourSelection] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState(null);
+
+  // Default to annotations-only for anyone who may not take the images with them.
+  useEffect(() => {
+    if (!canExportImages) setIncludeImages(false);
+  }, [canExportImages]);
 
   if (!isOpen) return null;
 
@@ -96,16 +110,30 @@ const CocoExportModal = ({ isOpen, onClose, dataset }) => {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setIncludeImages(true)}
+                onClick={() => canExportImages && setIncludeImages(true)}
+                disabled={!canExportImages}
+                title={
+                  canExportImages
+                    ? undefined
+                    : "Your role on this dataset does not allow downloading the images."
+                }
                 className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-colors ${
-                  includeImages
-                    ? "border-teal-500 bg-teal-50 text-teal-800"
-                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  !canExportImages
+                    ? "border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed"
+                    : includeImages
+                      ? "border-teal-500 bg-teal-50 text-teal-800"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                <Package className="w-5 h-5" />
+                {canExportImages ? (
+                  <Package className="w-5 h-5" />
+                ) : (
+                  <Lock className="w-5 h-5" />
+                )}
                 <span className="text-sm font-semibold">Images + annotations</span>
-                <span className="text-[11px] text-gray-500">ZIP bundle</span>
+                <span className="text-[11px] text-gray-500">
+                  {canExportImages ? "ZIP bundle" : "Not permitted"}
+                </span>
               </button>
               <button
                 type="button"

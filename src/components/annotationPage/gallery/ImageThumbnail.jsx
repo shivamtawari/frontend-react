@@ -1,22 +1,20 @@
 import React from 'react';
+import { getCoarseStatus } from '../../../utils/imageStatus';
+
+// The annotation gallery deliberately shows only the three coarse states; the
+// dataset manager is where the full review breakdown lives. Keyed off the shared
+// mapping, so the backend's `finished` actually matches (this used to switch on
+// `completed`, which the API never sends, leaving every done image grey).
+const STATUS_DOT = {
+  not_started: { color: 'bg-gray-100 border-gray-300', icon: '○' },
+  in_progress: { color: 'bg-yellow-100 border-yellow-300', icon: '⏳' },
+  finished: { color: 'bg-green-100 border-green-300', icon: '✓' },
+};
 
 const ImageThumbnail = React.memo(({ image, isSelected, onSelect, thumbnail, thumbnailError, isLoading }) => {
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 border-green-300';
-      case 'in_progress': return 'bg-yellow-100 border-yellow-300';
-      default: return 'bg-gray-100 border-gray-300';
-    }
-  };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'completed': return '✓';
-      case 'in_progress': return '⏳';
-      default: return '○';
-    }
-  };
+  const coarse = getCoarseStatus(image.status);
+  const dot = STATUS_DOT[coarse.key] || STATUS_DOT.not_started;
 
   const handleClick = () => {
     onSelect(image);
@@ -81,8 +79,11 @@ const ImageThumbnail = React.memo(({ image, isSelected, onSelect, thumbnail, thu
       {renderThumbnailContent()}
       
       {/* Status indicator */}
-      <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 flex items-center justify-center text-xs ${getStatusColor(image.status)}`}>
-        {getStatusIcon(image.status)}
+      <div
+        className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 flex items-center justify-center text-xs ${dot.color}`}
+        title={coarse.label}
+      >
+        {dot.icon}
       </div>
     </div>
   );

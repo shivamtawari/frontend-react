@@ -4,6 +4,7 @@ const DocumentationNavigation = ({ expandedSections, toggleSection, onTabClick, 
   const sections = [
     { id: 'gettingStarted', label: 'Getting Started' },
     { id: 'datasets', label: 'Datasets' },
+    { id: 'roles', label: 'Roles & Permissions' },
     { id: 'annotation', label: 'Annotation' },
     { id: 'aiSegmentation', label: 'AI Segmentation' },
     { id: 'quantification', label: 'Quantification' },

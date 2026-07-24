@@ -9,6 +9,8 @@ import {
   useSetCurrentImage 
 } from '../../../stores/selectors/annotationSelectors';
 import ZoomControls from '../canvas/ZoomControls';
+import { getCoarseStatus } from '../../../utils/imageStatus';
+import ScaleControl from '../canvas/ScaleControl';
 
 const ImageHeader = () => {
   const navigate = useNavigate();
@@ -23,23 +25,10 @@ const ImageHeader = () => {
   // Compute values in the component instead of in selectors
   const name = currentImage?.name || 'image name';
   
-  // Map status to display text and color
-  const getStatusDisplay = (status) => {
-    switch (status) {
-      case 'not_started':
-        return { text: 'Not started', color: 'bg-gray-100 text-gray-800' };
-      case 'in_progress':
-        return { text: 'In progress', color: 'bg-blue-100 text-blue-800' };
-      case 'reviewable':
-        return { text: 'Reviewable', color: 'bg-yellow-100 text-yellow-800' };
-      case 'finished':
-        return { text: 'Finished', color: 'bg-green-100 text-green-800' };
-      default:
-        return { text: 'Unknown', color: 'bg-gray-100 text-gray-800' };
-    }
-  };
-  
-  const statusDisplay = getStatusDisplay(annotationStatus);
+  // While annotating, only "is this image done?" matters. The review sub-states
+  // (awaiting review, sent back) are managed from the dataset manager, which
+  // shows the full breakdown.
+  const statusDisplay = getCoarseStatus(annotationStatus);
   
   const currentIndex = imageList.findIndex(img => img.id === currentImageId);
   const canGoNext = currentIndex < imageList.length - 1;
@@ -75,12 +64,15 @@ const ImageHeader = () => {
             </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-700 font-semibold">Annotation status:</span>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusDisplay.color}`}>
-                {statusDisplay.text}
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusDisplay.badge}`}>
+                {statusDisplay.label}
               </span>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
+            {/* Pixel Scale Calibration Control */}
+            <ScaleControl />
+
             {/* Zoom Controls */}
             <ZoomControls />
             

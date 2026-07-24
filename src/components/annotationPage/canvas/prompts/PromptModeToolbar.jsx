@@ -1,8 +1,14 @@
 import React from 'react';
-import { MousePointerClick, Square, Hexagon, Spline } from 'lucide-react';
+import { MousePointerClick, Square, Hexagon, Spline, Ruler } from 'lucide-react';
 import {
   usePromptMode,
   useSetPromptMode,
+  useCurrentTool,
+  useSetCurrentTool,
+  useStartCalibration,
+  useCancelCalibration,
+  useIsCalibrating,
+  useImageScale,
 } from '../../../../stores/selectors/annotationSelectors';
 
 /**
@@ -24,6 +30,22 @@ const MODES = [
 const PromptModeToolbar = ({ supportedTypes, shiftDown = false }) => {
   const promptMode = usePromptMode();
   const setPromptMode = useSetPromptMode();
+  const currentTool = useCurrentTool();
+  const setCurrentTool = useSetCurrentTool();
+  const startCalibration = useStartCalibration();
+  const cancelCalibration = useCancelCalibration();
+  const isCalibrating = useIsCalibrating();
+  const scale = useImageScale();
+
+  const handleToggleScale = () => {
+    if (currentTool === 'set_scale' || isCalibrating) {
+      cancelCalibration();
+      setCurrentTool('ai_annotation');
+    } else {
+      setCurrentTool('set_scale');
+      startCalibration();
+    }
+  };
 
   // Normalize the model's advertised prompt types to canonical singular keys.
   const declared = Array.isArray(supportedTypes) ? supportedTypes : [];
@@ -80,6 +102,32 @@ const PromptModeToolbar = ({ supportedTypes, shiftDown = false }) => {
           </button>
         );
       })}
+
+      <div className="w-px h-4 bg-gray-200 mx-0.5" />
+
+      {/* Set Scale Button */}
+      <button
+        type="button"
+        id="set-scale-canvas-toolbar-button"
+        onClick={handleToggleScale}
+        title={
+          scale?.unit !== 'px'
+            ? `Calibrated: 1px = ${scale?.scaleX?.toFixed(4)} ${scale?.unit}`
+            : 'Draw a ruler line to set scale'
+        }
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          currentTool === 'set_scale' || isCalibrating
+            ? 'bg-amber-500 text-white shadow-sm'
+            : scale?.unit !== 'px'
+            ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}
+      >
+        <Ruler className="w-3.5 h-3.5" />
+        <span className="hidden sm:inline">
+          {scale?.unit !== 'px' ? scale?.unit : 'Scale'}
+        </span>
+      </button>
     </div>
   );
 };

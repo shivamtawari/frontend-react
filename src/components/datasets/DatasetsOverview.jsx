@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useDataset } from "../../contexts/DatasetContext";
-import { Plus, FolderOpen, BookOpen, User } from "lucide-react";
+import { Plus, FolderOpen, BookOpen, User, UserCog } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { usePermissions } from "../../hooks/usePermissions";
+import { GLOBAL_ROLE_LABELS } from "../../utils/permissions";
 import AuthButtons from "../auth/AuthButtons";
 import ReportBugLink from "../ui/ReportBugLink";
 import AddDatasetModal from "./AddDatasetModal";
@@ -17,6 +19,9 @@ import { extractLabelsFromResponse } from "../../utils/labelHierarchy";
 const DatasetsOverview = ({ onOpenDataset }) => {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
+  // Global capabilities: creating datasets and administering accounts are decided
+  // by the account's platform role, not by any one dataset.
+  const { canCreateDatasets, canManageUsers, globalRole } = usePermissions();
   const {
     datasets,
     loading,
@@ -194,10 +199,25 @@ const DatasetsOverview = ({ onOpenDataset }) => {
             </div>
             <div className="flex items-center space-x-4">
               {isAuthenticated && user && (
-                <div className="flex items-center space-x-2 px-3 py-1.5 text-sm text-white">
+                <div
+                  className="flex items-center space-x-2 px-3 py-1.5 text-sm text-white"
+                  title={GLOBAL_ROLE_LABELS[globalRole]?.description}
+                >
                   <User className="w-4 h-4" />
                   <span className="font-medium">{user.username}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs">
+                    {GLOBAL_ROLE_LABELS[globalRole]?.label || globalRole}
+                  </span>
                 </div>
+              )}
+              {canManageUsers && (
+                <button
+                  onClick={() => navigate("/admin/users")}
+                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-lg transition-colors"
+                >
+                  <UserCog className="w-4 h-4" />
+                  <span>Users</span>
+                </button>
               )}
               <button
                 onClick={() => navigate("/docs")}
@@ -218,13 +238,15 @@ const DatasetsOverview = ({ onOpenDataset }) => {
         {/* Page Header */}
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-3xl font-bold text-gray-900">Datasets</h2>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center space-x-2 bg-teal-600 text-white px-6 py-3 rounded-lg hover:bg-teal-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add new dataset</span>
-          </button>
+          {canCreateDatasets && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center space-x-2 bg-teal-600 text-white px-6 py-3 rounded-lg hover:bg-teal-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add new dataset</span>
+            </button>
+          )}
         </div>
 
         {/* Error Display */}
@@ -248,15 +270,26 @@ const DatasetsOverview = ({ onOpenDataset }) => {
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
               No datasets yet
             </h3>
-            <p className="text-gray-600 mb-6">
-              Get started by creating your first dataset
-            </p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="bg-teal-600 text-white px-6 py-3 rounded-lg hover:bg-teal-700 transition-colors"
-            >
-              Create your first dataset
-            </button>
+            {canCreateDatasets ? (
+              <>
+                <p className="text-gray-600 mb-6">
+                  Get started by creating your first dataset
+                </p>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="bg-teal-600 text-white px-6 py-3 rounded-lg hover:bg-teal-700 transition-colors"
+                >
+                  Create your first dataset
+                </button>
+              </>
+            ) : (
+              // Guests can only work in datasets they were invited to, so telling
+              // them to create one would just lead to a 403.
+              <p className="text-gray-600 max-w-md mx-auto">
+                Your account cannot create datasets. Ask a dataset owner to send you an
+                invite link, and it will show up here once you accept it.
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

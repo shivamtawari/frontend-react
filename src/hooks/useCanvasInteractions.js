@@ -18,13 +18,29 @@ export const useCanvasInteractions = (containerRef) => {
   // Pan mode state (controlled by spacebar)
   const [isPanMode, setIsPanMode] = useState(false);
 
-  // Mouse wheel zoom handler
+  // Mouse wheel zoom handler with cursor-focal zoom math
   const handleWheel = useCallback((e) => {
     e.preventDefault();
+    if (!containerRef.current) return;
+
     const delta = e.deltaY > 0 ? 0.9 : 1.1; // Zoom out or in
-    const newZoomLevel = Math.max(0.1, Math.min(10, zoomLevel * delta));
+    const oldZoomLevel = zoomLevel;
+    const newZoomLevel = Math.max(0.1, Math.min(10, oldZoomLevel * delta));
+
+    if (newZoomLevel === oldZoomLevel) return;
+
+    // Calculate mouse position relative to container center
+    const rect = containerRef.current.getBoundingClientRect();
+    const mx = e.clientX - (rect.left + rect.width / 2);
+    const my = e.clientY - (rect.top + rect.height / 2);
+
+    // Adjust pan offset so the image pixel under the cursor remains stationary
+    const newPanX = panOffset.x + mx * (1 / newZoomLevel - 1 / oldZoomLevel);
+    const newPanY = panOffset.y + my * (1 / newZoomLevel - 1 / oldZoomLevel);
+
     setZoomLevel(newZoomLevel);
-  }, [zoomLevel, setZoomLevel]);
+    setPanOffset({ x: newPanX, y: newPanY });
+  }, [containerRef, zoomLevel, panOffset, setZoomLevel, setPanOffset]);
 
   // Mouse drag panning handlers
   const [isDragging, setIsDragging] = useState(false);

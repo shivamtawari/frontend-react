@@ -6,9 +6,11 @@ import {
   useSetImageObject,
   useSetImageLoading,
   useSetImageError,
-  useResetImageState
+  useResetImageState,
+  useSetImageScale,
 } from '../stores/selectors/annotationSelectors';
 import { getImageById } from '../api/images';
+import { getPixelScale } from '../api/scale';
 
 export const useImageLoader = (currentImage) => {
   const imageObject = useImageObject();
@@ -19,6 +21,7 @@ export const useImageLoader = (currentImage) => {
   const setImageLoading = useSetImageLoading();
   const setImageError = useSetImageError();
   const resetImageState = useResetImageState();
+  const setImageScale = useSetImageScale();
 
   const loadImage = useCallback(async (image) => {
     if (!image || !image.id) {
@@ -49,6 +52,16 @@ export const useImageLoader = (currentImage) => {
       });
 
       setImageObject(imgObject);
+
+      // Load persisted scale for this image from the backend.
+      // Done after image loads so scale bar appears immediately.
+      // Failure is non-fatal: scale simply stays at the default px value.
+      try {
+        const scaleData = await getPixelScale(image.id);
+        setImageScale(scaleData.scale_x, scaleData.scale_y, scaleData.unit);
+      } catch (scaleErr) {
+        console.warn('Could not load image scale (will default to px):', scaleErr);
+      }
       
     } catch (error) {
       console.error('Error loading image:', error);
@@ -57,7 +70,7 @@ export const useImageLoader = (currentImage) => {
     } finally {
       setImageLoading(false);
     }
-  }, [setImageObject, setImageLoading, setImageError]);
+  }, [setImageObject, setImageLoading, setImageError, setImageScale]);
 
   // Load image when currentImage changes
   useEffect(() => {

@@ -809,3 +809,25 @@ export const editContourLabel = async (contourId, newLabelId) => {
         throw error;
     }
 };
+
+/**
+ * Fetch a mask's contours over REST.
+ *
+ * The read-only viewer uses this instead of the annotation WebSocket, which
+ * delivers the hierarchy only to callers allowed to annotate. Contours come back
+ * with a precomputed `path` (an SVG path string in pixel coordinates), so they
+ * can be drawn without a canvas.
+ *
+ * @param {number} maskId
+ * @param {boolean} [flattened=true] - Flat list, or the nested parent/child tree.
+ */
+export const getContoursOfMask = async (maskId, flattened = true) => {
+    if (!maskId && maskId !== 0) {
+        throw new Error("Mask ID is required");
+    }
+    const url = buildUrl(API_BASE_URL, `/masks/${maskId}/contours`, {
+        flattened,
+    });
+    const response = await fetch(url, { headers: getAuthHeaders() });
+    return handleApiError(response);
+};

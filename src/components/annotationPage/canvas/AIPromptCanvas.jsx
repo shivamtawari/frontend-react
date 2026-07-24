@@ -407,6 +407,7 @@ const AIPromptCanvas = ({ width, height, renderBackground = true }) => {
         </div>
       )}
 
+      {containerSize.width > 0 && containerSize.height > 0 && (
       <Stage
         ref={stageRef}
         width={containerSize.width}
@@ -491,6 +492,7 @@ const AIPromptCanvas = ({ width, height, renderBackground = true }) => {
           )}
         </Layer>
       </Stage>
+      )}
 
       {focusModeWarning && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50">

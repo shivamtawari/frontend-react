@@ -20,6 +20,8 @@ import {
   useSuggestionModel,
   useWebSocketIsReady,
   useEnterEditMode,
+  useStartLineEdit,
+  useSelectObject,
 } from '../../../stores/selectors/annotationSelectors';
 import { useRefinementMode } from '../../../hooks/useRefinementMode';
 import { useZoomToObject } from '../../../hooks/useZoomToObject';
@@ -64,6 +66,8 @@ const ObjectContextMenu = () => {
   });
   const wsIsReady = useWebSocketIsReady();
   const enterEditMode = useEnterEditMode();
+  const startLineEdit = useStartLineEdit();
+  const selectObject = useSelectObject();
   const { currentDataset } = useDataset();
   const menuRef = useRef(null);
   
@@ -410,6 +414,44 @@ const ObjectContextMenu = () => {
     await runSuggestion(contourIds.length === 1 ? contourIds[0] : contourIds, labelId);
   };
 
+  const handleLineEditContour = () => {
+    if (isMultiSelect) return;
+    const targetObject = objectsList.find(obj => obj.id === targetObjectId);
+    if (!targetObject || targetObject.contour_id == null ||
+        !targetObject.x || targetObject.x.length === 0) {
+      hideContextMenu();
+      return;
+    }
+
+    if (focusModeActive) {
+      if (annotationSession.isReady()) {
+        annotationSession.unfocusImage().catch(() => {});
+      }
+      exitFocusMode();
+    }
+
+    selectObject(targetObject.id);
+    setCurrentTool('selection');
+    startLineEdit(targetObject.id, targetObject.contour_id, targetObject.x, targetObject.y);
+
+    // Frame the instance so there is room to draw the line.
+    if (imageObject && targetObject.x.length > 0) {
+      const container = menuRef.current?.parentElement;
+      if (container?.offsetWidth && container?.offsetHeight) {
+        const rendered = calculateRenderedImageDimensions(imageObject, container.offsetWidth, container.offsetHeight);
+        zoomToObject(
+          targetObject,
+          { width: imageObject.width, height: imageObject.height },
+          { width: container.offsetWidth, height: container.offsetHeight },
+          rendered,
+          { animateMs: 300, immediate: false }
+        );
+      }
+    }
+
+    hideContextMenu();
+  };
+
   const handleEditContour = () => {
     // Disable edit mode for multiple objects
     if (isMultiSelect) {
@@ -542,11 +584,25 @@ const ObjectContextMenu = () => {
         }
       />
 
+      {/* Reshape by Line Option - draw a line that is merged into the boundary */}
+      <ContextMenuItem
+        onClick={handleLineEditContour}
+        disabled={isMultiSelect}
+        title={isMultiSelect ? 'Reshape is disabled for multiple selections' : 'Draw a line across the boundary to cut off or add a region'}
+        className="hover:bg-teal-50 hover:text-teal-700"
+        label="Reshape by Line"
+        icon={
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 20l6-6m0 0l4-4 6-6M10 14l4 4m-4-4l-2-2" />
+          </svg>
+        }
+      />
+
       {/* Edit Contour Option - Disabled for multi-select */}
       <ContextMenuItem
         onClick={handleEditContour}
         disabled={isMultiSelect}
-        title={isMultiSelect ? 'Edit contour is disabled for multiple selections' : 'Edit contour shape'}
+        title={isMultiSelect ? 'Edit contour is disabled for multiple selections' : 'Drag the existing outline’s control points'}
         className="hover:bg-blue-50 hover:text-blue-700"
         label="Edit Contour"
         icon={

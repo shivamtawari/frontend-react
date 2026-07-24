@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Database, LogIn, ArrowRight } from 'lucide-react';
+
+/**
+ * Where to send the user after signing in.
+ *
+ * Only same-site paths are honoured: `?next=` comes from the URL bar, so an
+ * absolute URL there would turn the login page into an open redirect.
+ */
+const resolveNextPath = (search) => {
+  const next = new URLSearchParams(search).get('next');
+  if (next && next.startsWith('/') && !next.startsWith('//')) {
+    return next;
+  }
+  return '/datasets';
+};
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -9,13 +23,17 @@ const Login = () => {
   const [error, setError] = useState('');
   const { login, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Follow ?next= so an invite link survives the trip through sign-in.
+  const nextPath = resolveNextPath(location.search);
 
   // Redirect if already logged in
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/datasets');
+      navigate(nextPath, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, nextPath]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,7 +46,7 @@ const Login = () => {
 
     try {
       await login(username, password);
-      navigate('/datasets');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
     }

@@ -9,9 +9,12 @@ import { Line, Circle } from 'react-konva';
  * @param {Array<{x:number,y:number}>} props.polygonPoints - Vertices in image space
  * @param {{x:number,y:number}|null} props.cursorImagePt - Live cursor vertex (polygon only)
  * @param {Function} props.toStage - Maps an image-space point to [stageX, stageY]
+ * @param {boolean} [props.closed] - Override whether the preview line closes back
+ *   on itself. Defaults to closing only for freehand; pass false to draw an open line.
  */
-const DrawingPreview = ({ mode, polygonPoints, cursorImagePt, toStage }) => {
+const DrawingPreview = ({ mode, polygonPoints, cursorImagePt, toStage, closed }) => {
   if (!polygonPoints || polygonPoints.length === 0) return null;
+  const isClosed = closed ?? mode === 'freehand';
 
   const livePoints = [];
   polygonPoints.forEach((pt) => {
@@ -28,11 +31,11 @@ const DrawingPreview = ({ mode, polygonPoints, cursorImagePt, toStage }) => {
     <>
       <Line
         points={livePoints}
-        closed={mode === 'freehand'}
+        closed={isClosed}
         stroke="#0D9488"
         strokeWidth={2}
         dash={mode === 'polygon' ? [6, 4] : undefined}
-        fill={mode === 'freehand' ? 'rgba(20, 184, 166, 0.12)' : undefined}
+        fill={isClosed ? 'rgba(20, 184, 166, 0.12)' : undefined}
         lineJoin="round"
         lineCap="round"
       />

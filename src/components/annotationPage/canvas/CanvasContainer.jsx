@@ -12,6 +12,9 @@ import ObjectContextMenu from './ObjectContextMenu';
 import FocusOverlay from './FocusOverlay';
 import RefinementOverlay from './RefinementOverlay';
 import EditableContourOverlay from './EditableContourOverlay';
+import LineEditCanvas from './LineEditCanvas';
+import ScaleCalibrationOverlay from './ScaleCalibrationOverlay';
+import ScaleBarIndicator from './ScaleBarIndicator';
 import useAIAnnotationShortcuts from '../../../hooks/useAIAnnotationShortcuts';
 import useAISegmentation from '../../../hooks/useAISegmentation';
 import useFocusModeEscape from '../../../hooks/useFocusModeEscape';
@@ -27,6 +30,7 @@ import {
   useFetchAvailablePromptedModels,
   useRefinementModeActive, useSetPromptedModel,
   useFocusModeActive,
+  useLineEditActive,
 } from '../../../stores/selectors/annotationSelectors';
 
 const CanvasContainer = ({ imageObject, currentImage, zoomLevel, panOffset, isDragging }) => {
@@ -43,6 +47,7 @@ const CanvasContainer = ({ imageObject, currentImage, zoomLevel, panOffset, isDr
   const isSubmitting = useIsSubmitting();
   const refinementModeActive = useRefinementModeActive();
   const focusModeActive = useFocusModeActive();
+  const lineEditActive = useLineEditActive();
   const previousPromptsLengthRef = useRef(0);
   const previousRefinementModeRef = useRef(false);
   const refinementModeEnteredTimeRef = useRef(0);
@@ -207,6 +212,17 @@ const CanvasContainer = ({ imageObject, currentImage, zoomLevel, panOffset, isDr
 
       {/* Edit mode overlay (shows draggable control points for contour editing) */}
       <EditableContourOverlay canvasRef={canvasRef} zoomLevel={zoomLevel} panOffset={panOffset} />
+
+      {/* Line-edit mode: draw a line that gets merged into a contour (cut/add).
+          Mounted only while active so its viewport measures its container on the
+          first render (otherwise the stage stays 0-sized and eats clicks). */}
+      {lineEditActive && <LineEditCanvas />}
+
+      {/* Scale calibration overlay — active only when set_scale tool is selected */}
+      <ScaleCalibrationOverlay canvasRef={canvasRef} zoomLevel={zoomLevel} panOffset={panOffset} />
+
+      {/* Scale bar — shown in bottom-right whenever a real-world scale is set */}
+      <ScaleBarIndicator canvasRef={canvasRef} zoomLevel={zoomLevel} />
 
       {/* Context menu for object labeling */}
       <ObjectContextMenu />

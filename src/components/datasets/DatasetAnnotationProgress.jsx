@@ -6,16 +6,24 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
+import { IMAGE_STATUSES } from "../../utils/imageStatus";
 
-const COLORS = ["#DC2626", "#F59E0B", "#3B82F6", "#059669"]; // Red (Not started), Orange (In progress), Blue (Reviewable), Green (Finished)
-
+/**
+ * Breakdown of a dataset's masks by annotation status.
+ *
+ * Driven off IMAGE_STATUSES so adding a status (as `rejected` was) shows up here
+ * without a second list to keep in sync.
+ */
 const DatasetAnnotationProgress = ({ stats }) => {
-  // Ensure we have valid numbers, default to 0 if undefined/null
-  const notStarted = stats?.not_started || 0;
-  const inProgress = stats?.in_progress || 0;
-  const reviewable = stats?.reviewable || 0;
-  const finished = stats?.finished || 0;
-  const total = stats?.total || (notStarted + inProgress + reviewable + finished);
+  const rows = IMAGE_STATUSES.map((status) => ({
+    key: status.key,
+    name: status.label,
+    color: status.chart,
+    value: stats?.[status.key] || 0,
+  }));
+
+  const summed = rows.reduce((acc, row) => acc + row.value, 0);
+  const total = stats?.total || summed;
 
   if (total === 0) {
     return (
@@ -25,50 +33,33 @@ const DatasetAnnotationProgress = ({ stats }) => {
     );
   }
 
-  const data = [
-    { name: "Not started", value: notStarted },
-    { name: "In progress", value: inProgress },
-    { name: "Reviewable", value: reviewable },
-    { name: "Finished", value: finished }
-  ].filter(item => item.value > 0); // Only show statuses with counts > 0
+  const percent = (value) => Math.round((value / total) * 100);
+  // Only chart the statuses that actually occur, so empty slices don't clutter it.
+  const chartData = rows.filter((row) => row.value > 0);
 
   return (
     <div className="mb-4">
       <h4 className="text-sm font-semibold text-gray-700 mb-4">
         Annotation status:
       </h4>
-      
+
       <div className="flex items-center gap-6">
         {/* Text Summary */}
         <div className="flex-1 space-y-2 text-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[0] }}></div>
-              <span>Not started:</span>
+          {rows.map((row) => (
+            <div key={row.key} className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div
+                  className="w-3 h-3 rounded-full mr-2"
+                  style={{ backgroundColor: row.color }}
+                ></div>
+                <span>{row.name}:</span>
+              </div>
+              <span className="font-medium">
+                {row.value} ({percent(row.value)}%)
+              </span>
             </div>
-            <span className="font-medium">{notStarted} ({Math.round((notStarted / total) * 100)}%)</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[1] }}></div>
-              <span>In progress:</span>
-            </div>
-            <span className="font-medium">{inProgress} ({Math.round((inProgress / total) * 100)}%)</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[2] }}></div>
-              <span>Reviewable:</span>
-            </div>
-            <span className="font-medium">{reviewable} ({Math.round((reviewable / total) * 100)}%)</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[3] }}></div>
-              <span>Finished:</span>
-            </div>
-            <span className="font-medium">{finished} ({Math.round((finished / total) * 100)}%)</span>
-          </div>
+          ))}
         </div>
 
         {/* Enhanced Pie Chart */}
@@ -76,29 +67,24 @@ const DatasetAnnotationProgress = ({ stats }) => {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data}
+                data={chartData}
                 cx="50%"
                 cy="50%"
                 innerRadius={20}
                 outerRadius={40}
-                fill="#8884d8"
                 dataKey="value"
                 stroke="white"
                 strokeWidth={2}
               >
-                {data.map((entry, index) => {
-                  // Map data entry back to color index
-                  const colorIndex = entry.name === "Not started" ? 0 :
-                                   entry.name === "In progress" ? 1 :
-                                   entry.name === "Reviewable" ? 2 : 3;
-                  return <Cell key={`cell-${index}`} fill={COLORS[colorIndex]} />;
-                })}
+                {chartData.map((row) => (
+                  <Cell key={row.key} fill={row.color} />
+                ))}
               </Pie>
-              <Tooltip 
-                formatter={(value, name) => [`${value} (${Math.round((value / total) * 100)}%)`, name]}
+              <Tooltip
+                formatter={(value, name) => [`${value} (${percent(value)}%)`, name]}
                 labelStyle={{ color: '#374151' }}
-                contentStyle={{ 
-                  backgroundColor: 'white', 
+                contentStyle={{
+                  backgroundColor: 'white',
                   border: '1px solid #e5e7eb',
                   borderRadius: '8px',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
@@ -108,7 +94,7 @@ const DatasetAnnotationProgress = ({ stats }) => {
           </ResponsiveContainer>
         </div>
       </div>
-      
+
       {/* Total Images - Separate row */}
       <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 text-sm">
         <span className="font-medium text-gray-700">Total images:</span>
@@ -119,4 +105,3 @@ const DatasetAnnotationProgress = ({ stats }) => {
 };
 
 export default DatasetAnnotationProgress;
-

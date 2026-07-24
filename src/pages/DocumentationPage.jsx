@@ -9,6 +9,7 @@ import {
   HelpCircle,
   ArrowLeft,
   User,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import AuthButtons from "../components/auth/AuthButtons";
@@ -19,6 +20,7 @@ import {
   SectionHeader,
   GettingStartedSection,
   DatasetsSection,
+  RolesSection,
   AnnotationSection,
   AISegmentationSection,
   QuantificationSection,
@@ -32,6 +34,7 @@ const DocumentationPage = () => {
   const [expandedSections, setExpandedSections] = useState({
     gettingStarted: true,
     datasets: false,
+    roles: false,
     annotation: false,
     aiSegmentation: false,
     quantification: false,
@@ -94,6 +97,12 @@ const DocumentationPage = () => {
       title: "Dataset Management",
       icon: FileText,
       component: DatasetsSection
+    },
+    {
+      id: "roles",
+      title: "Roles & Permissions",
+      icon: ShieldCheck,
+      component: RolesSection
     },
     {
       id: "annotation",

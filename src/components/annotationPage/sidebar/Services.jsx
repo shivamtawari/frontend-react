@@ -169,6 +169,7 @@ const Services = () => {
                     </div>
                     <p className="text-xs text-gray-500 ml-8">AI-powered models for segmentation</p>
                 </div>
+
                 {services.map((service, index) => (
                     <ServiceCard
                         key={service.name}

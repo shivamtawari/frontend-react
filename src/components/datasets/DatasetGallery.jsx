@@ -5,6 +5,7 @@ import DataManagementView from "./gallery/DataManagementView";
 import LabelManagementView from "./gallery/LabelManagementView";
 import ManagementCardsView from "./gallery/ManagementCardsView";
 import CocoExportModal from "./gallery/CocoExportModal";
+import AnnotationQueueModal from "./gallery/AnnotationQueueModal";
 import DatasetManagementLayout from "./gallery/DatasetManagementLayout";
 import * as api from "../../api";
 import { normalizeImage } from "../../hooks/useDatasetGalleryData";
@@ -26,7 +27,8 @@ const DatasetGallery = () => {
   const galleryActions = useGalleryActions();
 
   const [showCocoModal, setShowCocoModal] = useState(false);
-  
+  const [showQueueModal, setShowQueueModal] = useState(false);
+
   // Derive current view from URL path so refresh preserves the view
   const pathname = location.pathname;
   const currentView = pathname.endsWith("/images")
@@ -43,23 +45,29 @@ const DatasetGallery = () => {
     galleryActions.setLabels(updatedLabels);
   }, [galleryActions]);
 
-  const handleStartAnnotation = async () => {
-    try {
-      // Get the first unannotated image
-      const response = await api.fetchImagesWithAnnotationStatus(dataset.id, "not_started");
-      
-      if (response.success && response.image_ids && response.image_ids.length > 0) {
-        const firstUnannotatedImageId = response.image_ids[0];
-        navigate(`/dataset/${dataset.id}/annotate/${firstUnannotatedImageId}`);
-      } else {
-        // No unannotated images, go to general annotation page
-        navigate(`/dataset/${dataset.id}/annotate`);
-      }
-    } catch (error) {
-      console.error("Error fetching unannotated images:", error);
-      // Fallback to general annotation page
+  // The Annotation card opens the queue builder rather than jumping straight into
+  // the editor: the queue defines the order images are worked in.
+  const handleAnnotationClick = () => setShowQueueModal(true);
+
+  // Called by the queue modal once a queue is built or resumed. Land on the first
+  // not-yet-finished image in queue order (fall back to the first image, then to
+  // the general page), and hand the order over via router state so the editor's
+  // loader can apply it without a reorder flash — it also re-reads the saved queue.
+  const handleQueueStart = (imageIds) => {
+    setShowQueueModal(false);
+    if (!imageIds || imageIds.length === 0) {
       navigate(`/dataset/${dataset.id}/annotate`);
+      return;
     }
+    const statusById = new Map(images.map((img) => [img.id, img]));
+    const firstUnfinished = imageIds.find((id) => {
+      const img = statusById.get(id);
+      return !img || (img.status !== "finished" && !img.finished);
+    });
+    const targetId = firstUnfinished ?? imageIds[0];
+    navigate(`/dataset/${dataset.id}/annotate/${targetId}`, {
+      state: { queueImageIds: imageIds },
+    });
   };
 
   const handleImageClick = (image) => {
@@ -104,18 +112,39 @@ const DatasetGallery = () => {
     navigate(`/dataset/${datasetId}/training`);
   };
 
+  const handleBrowseAnnotations = () => {
+    navigate(`/dataset/${datasetId}/view`);
+  };
+
+  const handleManageAccessClick = () => {
+    navigate(`/dataset/${datasetId}/access`);
+  };
+
+  const handleReviewClick = () => {
+    navigate(`/dataset/${datasetId}/review`);
+  };
+
+  const handleCorrectClick = () => {
+    navigate(`/dataset/${datasetId}/correct`);
+  };
+
   return (
     <DatasetManagementLayout>
       <div className="h-full overflow-hidden">
         {currentView === "cards" ? (
           <ManagementCardsView
+            dataset={dataset}
             onDataManagementClick={handleDataManagementClick}
             onModelZooClick={handleModelZooClick}
             onQuantificationsClick={handleQuantificationsClick}
-            onStartAnnotation={handleStartAnnotation}
+            onAnnotationClick={handleAnnotationClick}
             onLabelManagementClick={handleLabelManagementClick}
             onExportCocoClick={() => setShowCocoModal(true)}
             onModelTrainingClick={handleModelTrainingClick}
+            onBrowseAnnotations={handleBrowseAnnotations}
+            onManageAccessClick={handleManageAccessClick}
+            onReviewClick={handleReviewClick}
+            onCorrectClick={handleCorrectClick}
           />
         ) : currentView === "dataManagement" ? (
           <DataManagementView
@@ -139,6 +168,13 @@ const DatasetGallery = () => {
         isOpen={showCocoModal}
         onClose={() => setShowCocoModal(false)}
         dataset={dataset}
+      />
+
+      <AnnotationQueueModal
+        isOpen={showQueueModal}
+        onClose={() => setShowQueueModal(false)}
+        dataset={dataset}
+        onStart={handleQueueStart}
       />
     </DatasetManagementLayout>
   );

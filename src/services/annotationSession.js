@@ -7,6 +7,7 @@
  */
 
 import websocketService from './websocket';
+import { getAuthToken } from '../api/util';
 import { MessageBuilders, SERVER_MESSAGE_TYPES } from '../utils/messageTypes';
 
 /**
@@ -21,11 +22,14 @@ export const SessionState = {
 
 /**
  * Gets the authenticated username from the stored auth user.
- * Falls back to a temporary timestamp-based ID if no auth user is available.
- * @returns {string} The authenticated username or a temp ID
+ *
+ * This is display information only. The backend derives the session's identity
+ * from the bearer token and ignores the username in the URL, so there is no
+ * anonymous fallback any more — a session without a token is refused.
+ *
+ * @returns {string|null} The authenticated username, or null when logged out
  */
 const getUserId = () => {
-  // Try to get the real authenticated username from localStorage
   try {
     const userStr = localStorage.getItem('auth_user');
     if (userStr) {
@@ -37,21 +41,7 @@ const getUserId = () => {
   } catch (error) {
     console.warn('[AnnotationSession] Failed to read auth user from localStorage:', error);
   }
-
-  // Fallback: use a temporary timestamp-based ID
-  let userId = sessionStorage.getItem('temp_user_id');
-  if (!userId) {
-    const numericId = Date.now();
-    sessionStorage.setItem('temp_user_id', numericId.toString());
-    return numericId;
-  }
-  const parsedId = parseInt(userId, 10);
-  if (isNaN(parsedId)) {
-    const numericId = Date.now();
-    sessionStorage.setItem('temp_user_id', numericId.toString());
-    return numericId;
-  }
-  return parsedId;
+  return null;
 };
 
 const getWsBaseUrl = () => {
@@ -93,7 +83,7 @@ class AnnotationSession {
   /**
    * Initialize annotation session for an image
    * @param {number|string} imageId - Image ID
-   * @param {number} userId - User ID (optional, will use temp ID if not provided)
+   * @param {string} userId - Username for display (optional; identity comes from the token)
    * @returns {Promise<Object>} Session initialization data
    */
   async initialize(imageId, userId = null) {
@@ -102,8 +92,17 @@ class AnnotationSession {
       this.currentUserId = userId || getUserId();
       this._updateSessionState(SessionState.INITIALIZING);
 
-      // Construct WebSocket URL
-      const wsUrl = `${this.wsBaseUrl}/annotation_session/ws/${this.currentUserId}/${this.currentImageId}`;
+      // The backend authenticates the socket and checks `annotation.create` on the
+      // image's dataset before accepting it. Browsers cannot set headers on a
+      // WebSocket handshake, so the token travels as a query parameter.
+      const token = getAuthToken();
+      if (!token) {
+        this._updateSessionState(SessionState.ERROR);
+        throw new Error('You must be signed in to open an annotation session.');
+      }
+
+      const wsUrl = `${this.wsBaseUrl}/annotation_session/ws/${this.currentUserId}` +
+        `/${this.currentImageId}?token=${encodeURIComponent(token)}`;
 
       // Connect to WebSocket
       await websocketService.connect(wsUrl, {

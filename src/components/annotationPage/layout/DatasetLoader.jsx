@@ -1,12 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useDataset } from '../../../contexts/DatasetContext';
 import { useSetImageList, useSetCurrentImage } from '../../../stores/selectors/annotationSelectors';
 import useAnnotationStore from '../../../stores/useAnnotationStore';
 import { fetchImages } from '../../../api/images';
+import { fetchAnnotationQueue } from '../../../api/annotation_queue';
+
+/**
+ * Reorder the image list to follow the annotation queue: ids in `queueIds` come
+ * first, in that order; images not in the queue (e.g. uploaded after the queue was
+ * built) keep their original order at the end. Next/previous walk this list, so
+ * this is what makes the queue define the annotation order.
+ */
+const orderImagesByQueue = (images, queueIds) => {
+  if (!queueIds || queueIds.length === 0) return images;
+  const rank = new Map(queueIds.map((id, index) => [id, index]));
+  const inQueue = [];
+  const rest = [];
+  images.forEach((img) => (rank.has(img.id) ? inQueue : rest).push(img));
+  inQueue.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+  return [...inQueue, ...rest];
+};
+
+const isFinished = (img) => img?.status === 'finished' || img?.finished;
 
 const DatasetLoader = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { datasetId, imageId } = useParams();
   const { datasets, currentDataset, selectDataset, loading } = useDataset();
   const setImageList = useSetImageList();
@@ -100,21 +120,42 @@ const DatasetLoader = ({ children }) => {
           isFromAPI: true,
         }));
 
-        setImageList(apiImages);
+        // Apply the annotator's saved queue order. The queue ids are seeded from
+        // navigation state when we just came from the builder (avoids a reorder
+        // flash and a race with the just-saved row); on a refresh or a direct link
+        // there is no state, so fall back to re-reading the saved queue.
+        let orderedImages = apiImages;
+        try {
+          let queueIds = location.state?.queueImageIds;
+          if (!queueIds) {
+            const queueResponse = await fetchAnnotationQueue(dataset.id);
+            queueIds = queueResponse?.success && queueResponse.queue
+              ? queueResponse.queue.image_ids
+              : null;
+          }
+          orderedImages = orderImagesByQueue(apiImages, queueIds);
+        } catch (queueError) {
+          // No queue (or it failed to load) — keep upload order.
+          orderedImages = apiImages;
+        }
+
+        setImageList(orderedImages);
 
         // Set current image if imageId is provided
         if (imageId) {
           const imageIdNum = parseInt(imageId);
-          const targetImage = apiImages.find(img => img.id === imageIdNum);
+          const targetImage = orderedImages.find(img => img.id === imageIdNum);
           if (targetImage) {
             setCurrentImage(targetImage);
           } else {
             // Image not found, set first image as fallback
-            setCurrentImage(apiImages[0]);
+            setCurrentImage(orderedImages[0]);
           }
         } else {
-          // No specific image, set first image
-          setCurrentImage(apiImages[0]);
+          // No specific image: start at the first image still needing work, in
+          // queue order, so the annotator picks up where the queue left off.
+          const firstUnfinished = orderedImages.find(img => !isFinished(img));
+          setCurrentImage(firstUnfinished || orderedImages[0]);
         }
       } else {
         // Fallback to empty list

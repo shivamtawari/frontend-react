@@ -1,11 +1,14 @@
 import React from 'react';
-import { MousePointer, Pencil, Sparkles, CheckCircle } from 'lucide-react';
+import { MousePointer, Pencil, Sparkles, CheckCircle, Ruler } from 'lucide-react';
 import { 
   useCurrentTool, 
   useSetCurrentTool, 
   useLeftSidebarCollapsed,
   useInstantSegmentation,
   useToggleInstantSegmentation,
+  useStartCalibration,
+  useCancelCalibration,
+  useImageScale,
 } from '../../../stores/selectors/annotationSelectors';
 import ModelSelectors from './ModelSelectors';
 
@@ -15,12 +18,43 @@ const ToolsSection = () => {
   const leftSidebarCollapsed = useLeftSidebarCollapsed();
   const instantSegmentation = useInstantSegmentation();
   const toggleInstantSegmentation = useToggleInstantSegmentation();
+  const startCalibration = useStartCalibration();
+  const cancelCalibration = useCancelCalibration();
+  const scale = useImageScale();
+
+  const handleToolChange = (toolId) => {
+    if (toolId === 'set_scale') {
+      if (currentTool === 'set_scale') {
+        // Toggle off: exit calibration mode and return to previous tool
+        cancelCalibration();
+        setCurrentTool('ai_annotation');
+      } else {
+        setCurrentTool('set_scale');
+        startCalibration();
+      }
+      return;
+    }
+    // Switching away from scale tool: cancel any active calibration
+    if (currentTool === 'set_scale') {
+      cancelCalibration();
+    }
+    setCurrentTool(toolId);
+  };
 
   const tools = [
     { id: 'selection', name: 'Selection', icon: MousePointer, description: 'Select and manipulate objects', disabled: false },
     { id: 'manual_drawing', name: 'Manual Drawing', icon: Pencil, description: 'Draw polygon or freehand annotations by hand', disabled: false },
     { id: 'ai_annotation', name: 'AI assisted Annotation', icon: Sparkles, description: 'Use AI models for automatic segmentation', disabled: false },
     { id: 'suggestion', name: 'Annotation Suggestion', icon: CheckCircle, description: 'Automatically detect new objects given one or multiple examples', disabled: true },
+    {
+      id: 'set_scale',
+      name: 'Set Scale',
+      icon: Ruler,
+      description: scale?.unit !== 'px'
+        ? `Calibrated: 1px = ${scale.scaleX.toFixed(4)} ${scale.unit}`
+        : 'Draw a line to set the real-world scale',
+      disabled: false,
+    },
   ];
 
   if (leftSidebarCollapsed) {
@@ -36,7 +70,7 @@ const ToolsSection = () => {
             return (
               <button
                 key={tool.id}
-                onClick={() => !isDisabled && setCurrentTool(tool.id)}
+                onClick={() => !isDisabled && handleToolChange(tool.id)}
                 disabled={isDisabled}
                 className={`w-full p-2 rounded transition-colors flex items-center justify-center ${
                   isDisabled
@@ -68,7 +102,7 @@ const ToolsSection = () => {
           return (
             <button
               key={tool.id}
-              onClick={() => !isDisabled && setCurrentTool(tool.id)}
+              onClick={() => !isDisabled && handleToolChange(tool.id)}
               disabled={isDisabled}
               className={`w-full flex items-center space-x-2.5 p-2 rounded-lg transition-all text-left ${
                 isDisabled
