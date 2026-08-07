@@ -262,11 +262,13 @@ export const MessageBuilders = {
   /**
    * Request instance segmentation inference
    * @param {string} modelKey - Instance model key
+   * @param {string} applyMode - 'patch' or 'replace'
    */
-  runInstance: (modelKey) => createMessage(
+  runInstance: (modelKey, applyMode = 'patch') => createMessage(
     CLIENT_MESSAGE_TYPES.INSTANCE_INFERENCE,
     {
       model_registry_key: modelKey,
+      apply_mode: applyMode,
     }
   ),
 

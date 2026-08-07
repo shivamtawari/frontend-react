@@ -132,11 +132,11 @@ export default function useAnnotationServices() {
     setInstanceWarningModalOpen(false);
   };
 
-  const confirmInstanceRun = () => {
+  const confirmInstanceRun = (mode) => {
     setShowInstanceWarning(false);
     setInstanceRunRequested(false);
     setInstanceWarningModalOpen(false);
-    runInstance();
+    runInstance(mode);
   };
 
   const services = [

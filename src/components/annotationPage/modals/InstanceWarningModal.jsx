@@ -16,11 +16,11 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-[360px] max-w-[calc(100%-32px)] rounded-12 bg-p1 border border-ln2 shadow-modal animate-dcPop">
+      <div className="w-[420px] max-w-[calc(100%-32px)] rounded-12 bg-p1 border border-ln2 shadow-modal animate-dcPop">
         <div className="flex items-center gap-[8px] px-[14px] py-[12px] border-b border-ln">
           <AlertTriangle size={15} className="text-warn flex-none" />
           <h2 className="flex-1 text-modaltitle font-bold text-t1">
-            Replace all annotations?
+            Apply Instance Segmentation
           </h2>
           <button
             type="button"
@@ -34,13 +34,24 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
 
         <div className="px-[14px] py-[12px] flex flex-col gap-[10px]">
           <p className="text-row leading-[1.55] text-t2">
-            Running instance segmentation{' '}
-            <span className="font-semibold text-warn">overrides every contour</span>{' '}
-            currently on this image.
+            How would you like to apply the predicted instances?
           </p>
-          <p className="text-row leading-[1.55] text-t2">
-            This cannot be undone. Do you want to proceed?
-          </p>
+          <div className="flex flex-col gap-2 mt-2">
+            <div className="p-3 bg-well rounded border border-ln">
+              <p className="font-semibold text-t1 mb-1">Patch (Recommended)</p>
+              <p className="text-xs text-t3">
+                Keeps all existing annotations and adds new predictions. 
+                Suppresses duplicate predictions that overlap heavily with existing ones.
+              </p>
+            </div>
+            <div className="p-3 bg-errBg/30 rounded border border-errLn">
+              <p className="font-semibold text-warn mb-1">Replace</p>
+              <p className="text-xs text-t3">
+                <span className="font-semibold text-warn">Deletes all existing contours</span> for the classes the model predicts, 
+                then adds the new predictions. Other classes are preserved.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex justify-end gap-[7px] px-[14px] py-[11px] border-t border-ln">
@@ -53,10 +64,17 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm('replace')}
+            className="h-7 px-[11px] rounded-7 border border-errLn text-err hover:bg-errBg transition-colors"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm('patch')}
             className="h-7 px-[11px] rounded-7 border border-revLn bg-revBg2 text-btn font-bold text-rev hover:brightness-110 transition-[filter]"
           >
-            Replace and run
+            Patch (Recommended)
           </button>
         </div>
       </div>

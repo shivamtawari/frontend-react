@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import annotationSession from '../services/annotationSession';
 import {useInstanceModel, useIsRunningInstance, useSetIsRunningInstance} from "../stores/selectors/annotationSelectors";
+import { useToast } from "../contexts/ToastContext";
 
 /**
  * Hook for running instance segmentation inference
@@ -13,14 +14,15 @@ export function useInstanceSegmentation(onSuccess, onError) {
   const isRunning = useIsRunningInstance();
   const setIsRunning = useSetIsRunningInstance();
   const instanceModelId = useInstanceModel(); // This is a string ID, not an object
+  const { showToast } = useToast();
 
-  const runInstance = useCallback(async () => {
+  const runInstance = useCallback(async (applyMode = 'patch') => {
     if (!instanceModelId) {
       const error = new Error('Please select an instance segmentation model first');
       if (onError) {
         onError(error);
       } else {
-        alert('Please select an instance segmentation model first');
+        showToast('Please select an instance segmentation model first', 'error');
       }
       return;
     }
@@ -31,7 +33,7 @@ export function useInstanceSegmentation(onSuccess, onError) {
       if (onError) {
         onError(error);
       } else {
-        alert('Instance segmentation service is not available. Please check your connection.');
+        showToast('Instance segmentation service is not available. Please check your connection.', 'error');
       }
       return;
     }
@@ -42,7 +44,8 @@ export function useInstanceSegmentation(onSuccess, onError) {
       // Call WebSocket method - objects will be added automatically via OBJECT_ADDED messages
       // instanceModelId is already the string identifier we need
       const response = await annotationSession.runInstance(
-        instanceModelId  // Model identifier (string)
+        instanceModelId,  // Model identifier (string)
+        applyMode
       );
 
       if (!response.success) {
@@ -52,6 +55,16 @@ export function useInstanceSegmentation(onSuccess, onError) {
       // Call success callback if provided
       if (onSuccess) {
         onSuccess(response);
+      } else if (response?.data?.applied_stats) {
+        const stats = response.data.applied_stats;
+        showToast(
+          `Added ${stats.added_count} instances. Removed ${stats.suppressed_count} by overlap${
+            applyMode === 'replace' ? `, deleted ${stats.replaced_count} existing` : ''
+          }.`,
+          'success'
+        );
+      } else {
+        showToast('Instance segmentation applied successfully', 'success');
       }
     } catch (error) {
       console.error('Instance segmentation error:', error);
@@ -60,12 +73,12 @@ export function useInstanceSegmentation(onSuccess, onError) {
       if (onError) {
         onError(error);
       } else {
-        alert(`Failed to run instance segmentation: ${error.message || 'Unknown error'}`);
+        showToast(`Failed to run instance segmentation: ${error.message || 'Unknown error'}`, 'error');
       }
     } finally {
       setIsRunning(false);
     }
-  }, [instanceModelId, onSuccess, onError, setIsRunning]);
+  }, [instanceModelId, onSuccess, onError, setIsRunning, showToast]);
 
   return { runInstance, isRunning };
 }

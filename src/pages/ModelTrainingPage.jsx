@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
-  GraduationCap, Plus, Cpu, StopCircle, Loader2, ChevronDown, ChevronRight, Clock, Sparkles, AlertTriangle,
+  GraduationCap, Plus, ChevronDown, ChevronRight, Sparkles, AlertTriangle, Loader2
 } from "lucide-react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
 import DatasetManagementLayout from "../components/datasets/gallery/DatasetManagementLayout";
 import { useDataset } from "../contexts/DatasetContext";
 import DynamicHyperParameter from "../components/datasets/training/DynamicHyperParameter";
+import ModelMetadataGate, {
+  MODEL_METADATA_STATUS,
+} from "../components/modelTraining/ModelMetadataGate";
+import {
+  getLabelSelectionError,
+  normalizeLabelMetadata,
+  validateLabelSelection,
+} from "../components/modelTraining/labelHierarchy";
 import {
   fetchLabels,
   getInstanceModels,
@@ -18,20 +23,16 @@ import {
   streamInstanceTrainingProgress,
   getInstanceLabelAnnotationCounts,
 } from "../api";
-import useThemeColors from "../hooks/useThemeColors";
+import RunCard from "../components/modelTraining/trainingPage/RunCard";
+import ProgressPanel from "../components/modelTraining/trainingPage/ProgressPanel";
 
-const TERMINAL = new Set(["SUCCESS", "FAILED", "CANCELLED"]);
-
-const STATE_STYLE = {
-  PROGRESS: "bg-acS text-ac",
-  SUCCESS: "bg-okBg text-ok",
-  FAILED: "bg-errBg text-err",
-  CANCELLED: "bg-warnBg text-warn",
-  starting: "bg-well text-t2",
-};
-
-const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString() : "—");
-const lastLoss = (snap) => (snap?.loss?.length ? snap.loss[snap.loss.length - 1].value : null);
+const TERMINAL = new Set(["SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT"]);
+const RESOURCE_STATUS = Object.freeze({
+  LOADING: "loading",
+  SUCCESS: "success",
+  EMPTY: "empty",
+  ERROR: "error",
+});
 const RUN_NAME_PATTERN = /^[\p{L}\p{N}_\-\s]{1,80}$/u;
 
 const mergeRunSnapshot = (run, snapshot) => ({
@@ -47,6 +48,15 @@ const mergeRunSnapshot = (run, snapshot) => ({
   start_time: snapshot.start_time ?? run.start_time,
 });
 
+const mergeRunHistory = (currentRuns, serverRuns) => {
+  const serverTaskIds = new Set(serverRuns.map((run) => run.task_id).filter(Boolean));
+  const pendingLocalRuns = currentRuns.filter(
+    (run) => run.task_id && !serverTaskIds.has(run.task_id) && !TERMINAL.has(run.state),
+  );
+  return [...serverRuns, ...pendingLocalRuns]
+    .sort((a, b) => (b.start_time || 0) - (a.start_time || 0));
+};
+
 const getRunNameError = (value) => {
   if (value.length === 0) return null;
   if (value.length > 80) return "Run name must be 80 characters or fewer.";
@@ -56,134 +66,17 @@ const getRunNameError = (value) => {
   return null;
 };
 
-function RunCard({ run, selected, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left p-3 rounded-xl border transition-colors ${
-        selected ? "border-acLn bg-acS" : "border-ln bg-p1 hover:bg-hv"
-      }`}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATE_STYLE[run.state] || STATE_STYLE.starting}`}>
-          {run.state}
-        </span>
-        <span className="text-[11px] text-t3 flex items-center gap-1">
-          <Clock size={11} /> {fmtTime(run.start_time)}
-        </span>
-      </div>
-      <div className="text-xs text-t2">
-        {run.run_name && (
-          <p className="text-xs font-medium text-t1 truncate mb-0.5">{run.run_name}</p>
-        )}
-        {(run.label_ids?.length ?? 0)} class{(run.label_ids?.length ?? 0) === 1 ? "" : "es"}
-        {run.total_epochs ? ` · ${run.epoch}/${run.total_epochs} epochs` : ""}
-        {lastLoss(run) != null ? ` · loss ${lastLoss(run).toFixed(3)}` : ""}
-      </div>
-    </button>
-  );
-}
-
-function ProgressPanel({ snapshot, onStop, isStopping }) {
-  const { colors } = useThemeColors();
-  const total = snapshot.total_epochs || 0;
-  const current = snapshot.epoch || 0;
-  const percent = total ? Math.min(100, Math.round((current / total) * 100)) : 0;
-  const lossData = (snapshot.loss || []).map((d) => ({ epoch: d.epoch, loss: d.value }));
-  const trainingParameters = snapshot.training_parameters || {};
-  const isActive = !TERMINAL.has(snapshot.state) && snapshot.state !== "starting";
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm text-t2">
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATE_STYLE[snapshot.state] || STATE_STYLE.starting}`}>
-          {snapshot.state}
-        </span>
-        {snapshot.state === "starting" ? (
-          <span className="flex items-center gap-1"><Loader2 className="w-4 h-4 animate-spin" /> Waiting for worker…</span>
-        ) : (
-          <span className="flex items-center gap-1">
-            <Cpu className="w-4 h-4 text-ac" /> Epoch {current}{total ? ` / ${total}` : ""}
-          </span>
-        )}
-      </div>
-
-      {Object.keys(trainingParameters).length > 0 && (
-        <div className="p-3 rounded-lg border border-ln bg-well">
-          <h3 className="text-sm font-semibold text-t1 mb-2">Training configuration</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            {Object.entries(trainingParameters).map(([key, value]) => (
-              <div key={key}>
-                <span className="block text-t3 capitalize">{key.replace(/_/g, " ")}</span>
-                <span className="font-medium text-t1">{String(value)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {total > 0 && (
-        <div className="w-full bg-hv2 rounded h-2">
-          <div className="bg-accent h-2 rounded" style={{ width: `${percent}%`, transition: "width 0.5s" }} />
-        </div>
-      )}
-
-      {lossData.length > 0 ? (
-        <div>
-          <h3 className="text-sm font-semibold text-t1">Training loss</h3>
-          <p className="text-[11px] text-t3 mb-2">
-            Mask2Former combined loss (classification + mask + dice), averaged per epoch. Lower is better.
-          </p>
-          <div className="w-full h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={lossData} margin={{ top: 5, right: 10, bottom: 20, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={colors.ln2} />
-                <XAxis
-                  dataKey="epoch"
-                  tick={{ fontSize: 11, fill: colors.t2 }}
-                  label={{ value: "epoch", position: "insideBottom", offset: -10, fontSize: 11, fill: colors.t3 }}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: colors.t2 }}
-                  width={56}
-                  label={{ value: "loss", angle: -90, position: "insideLeft", fontSize: 11, fill: colors.t3 }}
-                />
-                <Tooltip
-                  formatter={(value) => [Number(value).toFixed(4), "loss"]}
-                  labelFormatter={(epoch) => `Epoch ${epoch}`}
-                  contentStyle={{ backgroundColor: colors.p2, border: `1px solid ${colors.ln}`, borderRadius: '8px', color: colors.t1 }}
-                  labelStyle={{ color: colors.t2 }}
-                />
-                <Line type="monotone" dataKey="loss" stroke={colors.ac} dot={false} name="Training loss" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      ) : (
-        <p className="text-sm text-t3">No loss logged yet.</p>
-      )}
-
-      {isActive && (
-        <button
-          onClick={onStop}
-          disabled={isStopping}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-onAccent bg-err rounded-lg hover:brightness-110 transition-colors disabled:opacity-60"
-        >
-          {isStopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <StopCircle className="w-4 h-4" />}
-          {isStopping ? "Stopping…" : "Stop Training"}
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function ModelTrainingPage() {
   const { datasetId } = useParams();
   const { currentDataset } = useDataset();
 
   const [labels, setLabels] = useState([]);
+  const [labelStatus, setLabelStatus] = useState(RESOURCE_STATUS.LOADING);
+  const [labelError, setLabelError] = useState(null);
   const [models, setModels] = useState([]);
-  const [modelKey, setModelKey] = useState("mask2former");
+  const [modelKey, setModelKey] = useState(null);
+  const [modelMetadataStatus, setModelMetadataStatus] = useState(MODEL_METADATA_STATUS.LOADING);
+  const [modelMetadataError, setModelMetadataError] = useState(null);
   const [selectedLabelIds, setSelectedLabelIds] = useState(() => new Set());
   const [hyperValues, setHyperValues] = useState({});
   const [showAdvanced, setShowAdvanced] = useState(true);
@@ -197,8 +90,17 @@ export default function ModelTrainingPage() {
   const [error, setError] = useState(null);
   const [annotationCounts, setAnnotationCounts] = useState({});
   const [annotationCountStatus, setAnnotationCountStatus] = useState("loading");
+  const [annotationCountError, setAnnotationCountError] = useState(null);
+  const [runStatus, setRunStatus] = useState(RESOURCE_STATUS.LOADING);
+  const [runError, setRunError] = useState(null);
   const [modelRunName, setModelRunName] = useState("");
 
+  const datasetGenerationRef = useRef(0);
+  const labelRequestRef = useRef(0);
+  const annotationCountRequestRef = useRef(0);
+  const runRequestRef = useRef(0);
+  const modelMetadataRequestRef = useRef(0);
+  const streamGenerationRef = useRef(0);
   const streamRef = useRef(null);
 
   const selectedModel = useMemo(
@@ -206,59 +108,208 @@ export default function ModelTrainingPage() {
     [models, modelKey]
   );
 
-  const loadRuns = useCallback(async () => {
+  const loadLabels = useCallback(async () => {
+    const requestedDatasetId = datasetId;
+    const generation = datasetGenerationRef.current;
+    const requestId = labelRequestRef.current + 1;
+    labelRequestRef.current = requestId;
+    setLabelStatus(RESOURCE_STATUS.LOADING);
+    setLabelError(null);
+    setLabels([]);
+    setSelectedLabelIds(new Set());
+
     try {
-      const res = await getInstanceTrainingRuns(datasetId);
-      const serverRuns = Array.isArray(res?.runs) ? res.runs : [];
-      setRuns((currentRuns) => {
-        const serverTaskIds = new Set(serverRuns.map((run) => run.task_id).filter(Boolean));
-        const pendingLocalRuns = currentRuns.filter(
-          (run) => run.task_id && !serverTaskIds.has(run.task_id) && !TERMINAL.has(run.state)
-        );
-        return [...serverRuns, ...pendingLocalRuns]
-          .sort((a, b) => (b.start_time || 0) - (a.start_time || 0));
-      });
+      const labelRes = await fetchLabels(requestedDatasetId);
+      if (
+        datasetGenerationRef.current !== generation
+        || labelRequestRef.current !== requestId
+      ) return;
+
+      const labelMap = labelRes?.labels?.id_to_label_object;
+      if (!labelMap || typeof labelMap !== "object" || Array.isArray(labelMap)) {
+        throw new Error("Labels response was invalid.");
+      }
+
+      const list = normalizeLabelMetadata(labelMap);
+      setLabels(list);
+      setSelectedLabelIds(new Set(list.map((label) => label.id)));
+      setLabelStatus(list.length > 0 ? RESOURCE_STATUS.SUCCESS : RESOURCE_STATUS.EMPTY);
     } catch (e) {
-      // non-fatal
+      if (
+        datasetGenerationRef.current !== generation
+        || labelRequestRef.current !== requestId
+      ) return;
+
+      setLabels([]);
+      setSelectedLabelIds(new Set());
+      setLabelError(e.message || "Failed to load labels.");
+      setLabelStatus(RESOURCE_STATUS.ERROR);
     }
   }, [datasetId]);
 
-  // Initial load: labels, models, runs.
-  useEffect(() => {
-    if (!datasetId) return;
-    setAnnotationCountStatus("loading");
+  const loadAnnotationCounts = useCallback(async () => {
+    const requestedDatasetId = datasetId;
+    const generation = datasetGenerationRef.current;
+    const requestId = annotationCountRequestRef.current + 1;
+    annotationCountRequestRef.current = requestId;
+    setAnnotationCountStatus(RESOURCE_STATUS.LOADING);
+    setAnnotationCountError(null);
     setAnnotationCounts({});
-    (async () => {
-      try {
-        const labelRes = await fetchLabels(datasetId);
-        const idMap = labelRes?.labels?.id_to_label_object || {};
-        const list = Object.values(idMap).map((l) => ({ id: l.id, name: l.name }));
-        setLabels(list);
-        setSelectedLabelIds(new Set(list.map((l) => l.id)));
-      } catch (e) {
-        setError(e.message || "Failed to load labels.");
+
+    try {
+      const countRes = await getInstanceLabelAnnotationCounts(requestedDatasetId);
+      if (
+        datasetGenerationRef.current !== generation
+        || annotationCountRequestRef.current !== requestId
+      ) return;
+      if (
+        countRes?.success !== true
+        || !countRes.reviewed_annotation_counts
+        || typeof countRes.reviewed_annotation_counts !== "object"
+        || Array.isArray(countRes.reviewed_annotation_counts)
+      ) {
+        throw new Error("Annotation counts were not returned.");
       }
-      try {
-        const countRes = await getInstanceLabelAnnotationCounts(datasetId);
-        if (countRes?.success !== true || !countRes.reviewed_annotation_counts) {
-          throw new Error("Annotation counts were not returned.");
-        }
-        setAnnotationCounts(countRes.reviewed_annotation_counts);
-        setAnnotationCountStatus("success");
-      } catch {
-        setAnnotationCountStatus("error");
+
+      setAnnotationCounts(countRes.reviewed_annotation_counts);
+      setAnnotationCountStatus(RESOURCE_STATUS.SUCCESS);
+    } catch (e) {
+      if (
+        datasetGenerationRef.current !== generation
+        || annotationCountRequestRef.current !== requestId
+      ) return;
+
+      setAnnotationCounts({});
+      setAnnotationCountError(e.message || "Failed to load annotation counts.");
+      setAnnotationCountStatus(RESOURCE_STATUS.ERROR);
+    }
+  }, [datasetId]);
+
+  const loadRuns = useCallback(async () => {
+    const requestedDatasetId = datasetId;
+    const generation = datasetGenerationRef.current;
+    const requestId = runRequestRef.current + 1;
+    runRequestRef.current = requestId;
+    setRunStatus(RESOURCE_STATUS.LOADING);
+    setRunError(null);
+
+    try {
+      const res = await getInstanceTrainingRuns(requestedDatasetId);
+      if (
+        datasetGenerationRef.current !== generation
+        || runRequestRef.current !== requestId
+      ) return;
+      if (!Array.isArray(res?.runs)) {
+        throw new Error("Run history response was invalid.");
       }
-      try {
-        const modelRes = await getInstanceModels();
-        const list = Array.isArray(modelRes?.result) ? modelRes.result : [];
-        setModels(list);
-        if (list.length > 0) setModelKey(list[0].registry_key);
-      } catch (e) {
-        // fall back to default key
+
+      const serverRuns = res.runs;
+      setRuns((currentRuns) => mergeRunHistory(currentRuns, serverRuns));
+      setRunStatus(serverRuns.length > 0 ? RESOURCE_STATUS.SUCCESS : RESOURCE_STATUS.EMPTY);
+
+      const nonterminal = serverRuns.find((run) => !TERMINAL.has(run.state));
+      if (nonterminal) {
+        setActiveTaskId((prev) => prev || nonterminal.task_id);
+        setSelectedRun((prev) => prev || nonterminal);
       }
-    })();
-    loadRuns();
-  }, [datasetId, loadRuns]);
+    } catch (e) {
+      if (
+        datasetGenerationRef.current !== generation
+        || runRequestRef.current !== requestId
+      ) return;
+
+      setRunError(e.message || "Failed to load run history.");
+      setRunStatus(RESOURCE_STATUS.ERROR);
+    }
+  }, [datasetId]);
+
+  const loadModelMetadata = useCallback(async () => {
+    const requestId = modelMetadataRequestRef.current + 1;
+    modelMetadataRequestRef.current = requestId;
+    setModelMetadataStatus(MODEL_METADATA_STATUS.LOADING);
+    setModelMetadataError(null);
+    setModels([]);
+    setModelKey(null);
+    setHyperValues({});
+
+    try {
+      const modelRes = await getInstanceModels();
+      if (requestId !== modelMetadataRequestRef.current) return;
+      if (!Array.isArray(modelRes?.result)) {
+        throw new Error("Training models response was invalid.");
+      }
+
+      const list = modelRes.result.filter(
+        (model) => typeof model?.registry_key === "string" && model.registry_key.trim().length > 0,
+      );
+      setModels(list);
+      setModelKey(list[0]?.registry_key ?? null);
+      setModelMetadataStatus(
+        list.length > 0 ? MODEL_METADATA_STATUS.SUCCESS : MODEL_METADATA_STATUS.EMPTY,
+      );
+    } catch (e) {
+      if (requestId !== modelMetadataRequestRef.current) return;
+
+      setModels([]);
+      setModelKey(null);
+      setHyperValues({});
+      setModelMetadataError(e.message || "Failed to load training models.");
+      setModelMetadataStatus(MODEL_METADATA_STATUS.ERROR);
+    }
+  }, []);
+
+  // Load all dataset-scoped resources under one generation. A response from a
+  // previous dataset is ignored even when the underlying API cannot be
+  // cancelled.
+  useEffect(() => {
+    const generation = datasetGenerationRef.current + 1;
+    datasetGenerationRef.current = generation;
+
+    setLabels([]);
+    setLabelStatus(RESOURCE_STATUS.LOADING);
+    setLabelError(null);
+    setSelectedLabelIds(new Set());
+    setAnnotationCountStatus(RESOURCE_STATUS.LOADING);
+    setAnnotationCounts({});
+    setAnnotationCountError(null);
+    setRuns([]);
+    setRunStatus(RESOURCE_STATUS.LOADING);
+    setRunError(null);
+    setSelectedRun(null);
+    setActiveTaskId(null);
+    setMode("config");
+    setIsStarting(false);
+    setIsStopping(false);
+    setError(null);
+    setModelRunName("");
+    setHyperValues({});
+
+    if (datasetId) {
+      loadLabels();
+      loadAnnotationCounts();
+      loadRuns();
+    }
+
+    return () => {
+      if (datasetGenerationRef.current !== generation) return;
+
+      // Invalidate before aborting so a callback already queued by the stream
+      // cannot repopulate the old dataset after the route changes/unmounts.
+      datasetGenerationRef.current += 1;
+      streamGenerationRef.current += 1;
+      if (streamRef.current?.abort) streamRef.current.abort();
+      streamRef.current = null;
+    };
+  }, [datasetId, loadAnnotationCounts, loadLabels, loadRuns]);
+
+  // Model metadata is global, but still receives a request token so an
+  // unmounted page cannot render a late registry response.
+  useEffect(() => {
+    loadModelMetadata();
+    return () => {
+      modelMetadataRequestRef.current += 1;
+    };
+  }, [loadModelMetadata]);
 
   // Initialize hyperparameter values from the selected model's declared defaults.
   useEffect(() => {
@@ -268,32 +319,69 @@ export default function ModelTrainingPage() {
     setHyperValues(defaults);
   }, [selectedModel]);
 
-  // Stream progress for the active task; tear down on change/unmount.
+  const invalidateCurrentStream = () => {
+    streamGenerationRef.current += 1;
+    if (streamRef.current?.abort) streamRef.current.abort();
+    streamRef.current = null;
+  };
+
+  // Stream progress for the active task; callbacks are scoped to the dataset,
+  // task, and stream instance that created them.
   useEffect(() => {
-    if (!activeTaskId) return;
+    const streamId = streamGenerationRef.current + 1;
+    streamGenerationRef.current = streamId;
+    const generation = datasetGenerationRef.current;
+    const taskId = activeTaskId;
+
+    if (!taskId) {
+      streamRef.current = null;
+      return () => {
+        if (streamGenerationRef.current === streamId) streamGenerationRef.current += 1;
+      };
+    }
+
+    const isLive = () => (
+      streamGenerationRef.current === streamId
+      && datasetGenerationRef.current === generation
+    );
     const controller = streamInstanceTrainingProgress(
-      activeTaskId,
+      taskId,
       (snap) => {
-        setSelectedRun((currentRun) => (currentRun ? mergeRunSnapshot(currentRun, snap) : snap));
+        if (!isLive() || !snap || typeof snap !== "object") return;
+        if (snap.task_id && snap.task_id !== taskId) return;
+
+        const scopedSnapshot = snap.task_id ? snap : { ...snap, task_id: taskId };
+        setSelectedRun((currentRun) => {
+          if (!currentRun) return scopedSnapshot;
+          if (currentRun.task_id && currentRun.task_id !== taskId) return currentRun;
+          return mergeRunSnapshot(currentRun, scopedSnapshot);
+        });
         setRuns((currentRuns) => {
           const matchingIndex = currentRuns.findIndex(
-            (run) => run.task_id === snap.task_id || (snap.run_id && run.run_id === snap.run_id)
+            (run) => run.task_id === taskId
+              || (scopedSnapshot.run_id && run.run_id === scopedSnapshot.run_id),
           );
-          if (matchingIndex === -1) return [snap, ...currentRuns];
+          if (matchingIndex === -1) return [scopedSnapshot, ...currentRuns];
           return currentRuns.map((run, index) => (
-            index === matchingIndex ? mergeRunSnapshot(run, snap) : run
+            index === matchingIndex ? mergeRunSnapshot(run, scopedSnapshot) : run
           ));
         });
-        if (TERMINAL.has(snap.state)) {
-          setActiveTaskId(null);
+        if (TERMINAL.has(scopedSnapshot.state)) {
+          setActiveTaskId((currentTaskId) => (currentTaskId === taskId ? null : currentTaskId));
           loadRuns();
         }
       },
-      (err) => setError(err.message || "Lost connection to training stream."),
+      (err) => {
+        if (isLive()) setError(err.message || "Lost connection to training stream.");
+      },
     );
     streamRef.current = controller;
-    return () => controller.abort();
-  }, [activeTaskId, loadRuns]);
+    return () => {
+      if (streamGenerationRef.current === streamId) streamGenerationRef.current += 1;
+      if (streamRef.current === controller) streamRef.current = null;
+      if (controller?.abort) controller.abort();
+    };
+  }, [activeTaskId, datasetId, loadRuns]);
 
   const setHyper = (key, value) => setHyperValues((prev) => ({ ...prev, [key]: value }));
 
@@ -304,7 +392,16 @@ export default function ModelTrainingPage() {
   });
 
   const handleStart = async () => {
-    if (getRunNameError(modelRunName)) return;
+    const selectionValidation = validateLabelSelection(labels, selectedLabelIds);
+    if (
+      getRunNameError(modelRunName)
+      || !selectedModel
+      || labelStatus !== RESOURCE_STATUS.SUCCESS
+      || !selectionValidation.valid
+    ) return;
+
+    const requestedDatasetId = datasetId;
+    const generation = datasetGenerationRef.current;
     setError(null);
     setIsStarting(true);
     try {
@@ -316,6 +413,11 @@ export default function ModelTrainingPage() {
         hyper_parameter: hyperValues,
         model_run_name: modelRunName.trim() || undefined,
       });
+      if (
+        datasetGenerationRef.current !== generation
+        || String(datasetId) !== String(requestedDatasetId)
+      ) return;
+
       const labelIds = Array.from(selectedLabelIds);
       const optimisticRun = {
         task_id: res.task_id,
@@ -338,36 +440,60 @@ export default function ModelTrainingPage() {
       setActiveTaskId(res.task_id);
       loadRuns();
     } catch (err) {
-      setError(err.message || "Failed to start training.");
+      if (
+        datasetGenerationRef.current === generation
+        && String(datasetId) === String(requestedDatasetId)
+      ) {
+        setError(err.message || "Failed to start training.");
+      }
     } finally {
-      setIsStarting(false);
+      if (
+        datasetGenerationRef.current === generation
+        && String(datasetId) === String(requestedDatasetId)
+      ) {
+        setIsStarting(false);
+      }
     }
   };
 
   const handleStop = async () => {
     if (!activeTaskId) return;
+    const taskId = activeTaskId;
+    const generation = datasetGenerationRef.current;
+    invalidateCurrentStream();
     setIsStopping(true);
     try {
-      const snapshot = await cancelInstanceTraining(activeTaskId);
-      setSelectedRun((currentRun) => (currentRun ? mergeRunSnapshot(currentRun, snapshot) : snapshot));
+      const snapshot = await cancelInstanceTraining(taskId);
+      if (datasetGenerationRef.current !== generation) return;
+      setSelectedRun((currentRun) => {
+        if (!currentRun || currentRun.task_id !== taskId) return currentRun;
+        return mergeRunSnapshot(currentRun, snapshot);
+      });
     } catch (err) {
-      setError(err.message || "Failed to stop training.");
+      if (datasetGenerationRef.current === generation) {
+        setError(err.message || "Failed to stop training.");
+      }
       return;
     } finally {
-      setIsStopping(false);
+      if (datasetGenerationRef.current === generation) setIsStopping(false);
     }
-    setActiveTaskId(null);
-    loadRuns();
+    if (datasetGenerationRef.current === generation) {
+      setActiveTaskId((currentTaskId) => (currentTaskId === taskId ? null : currentTaskId));
+      loadRuns();
+    }
   };
 
   const handleSelectRun = (run) => {
+    const nextTaskId = !TERMINAL.has(run.state) && run.task_id ? run.task_id : null;
+    if (nextTaskId !== activeTaskId) invalidateCurrentStream();
     setMode("run");
     setSelectedRun(run);
     // Keep streaming a still-running run; otherwise show its static snapshot.
-    setActiveTaskId(!TERMINAL.has(run.state) && run.task_id ? run.task_id : null);
+    setActiveTaskId(nextTaskId);
   };
 
   const handleNewTraining = () => {
+    invalidateCurrentStream();
     setActiveTaskId(null);
     setSelectedRun(null);
     setMode("config");
@@ -378,6 +504,8 @@ export default function ModelTrainingPage() {
     annotationCountStatus === "success" &&
     selectedLabelIds.size > 0 &&
     [...selectedLabelIds].every((id) => (annotationCounts[id] ?? 0) === 0);
+  const selectionValidation = validateLabelSelection(labels, selectedLabelIds);
+  const selectionError = getLabelSelectionError(selectionValidation);
   const runNameError = getRunNameError(modelRunName);
   const hasActiveRun = activeTaskId != null || runs.some((run) => !TERMINAL.has(run.state));
 
@@ -400,6 +528,7 @@ export default function ModelTrainingPage() {
           <aside className="w-72 shrink-0 border-r border-ln flex flex-col">
             <div className="p-3 border-b border-ln">
               <button
+                type="button"
                 onClick={handleNewTraining}
                 className={`w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
                   mode === "config" ? "bg-accent text-onAccent" : "bg-acS text-ac hover:bg-acS"
@@ -410,12 +539,38 @@ export default function ModelTrainingPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-t3 px-1">Run history</p>
-              {runs.length === 0 && <p className="text-xs text-t3 px-1">No runs yet.</p>}
+              {runStatus === RESOURCE_STATUS.LOADING && runs.length === 0 && (
+                <p className="text-xs text-t3 px-1" role="status" aria-label="Loading run history">Loading run history…</p>
+              )}
+              {runStatus === RESOURCE_STATUS.ERROR && (
+                <div
+                  className="p-2 rounded-lg bg-errBg border border-errLn text-xs text-err"
+                  role="alert"
+                  aria-label={runError || "Unable to load run history."}
+                >
+                  <p>{runError || "Unable to load run history."}</p>
+                  <button
+                    type="button"
+                    onClick={loadRuns}
+                    className="mt-2 font-medium underline hover:no-underline"
+                  >
+                    Retry run history
+                  </button>
+                </div>
+              )}
+              {runStatus === RESOURCE_STATUS.EMPTY && runs.length === 0 && (
+                <p className="text-xs text-t3 px-1" role="status" aria-label="No runs yet for this dataset">
+                  No runs yet for this dataset.
+                </p>
+              )}
               {runs.map((run) => (
                 <RunCard
                   key={run.run_id || run.task_id}
                   run={run}
-                  selected={mode === "run" && selectedRun && (selectedRun.run_id === run.run_id)}
+                  selected={mode === "run" && selectedRun && (
+                    (selectedRun.task_id && selectedRun.task_id === run.task_id)
+                    || (selectedRun.run_id && selectedRun.run_id === run.run_id)
+                  )}
                   onClick={() => handleSelectRun(run)}
                 />
               ))}
@@ -425,7 +580,13 @@ export default function ModelTrainingPage() {
           {/* Right: config or progress */}
           <main className="flex-1 overflow-y-auto p-6">
             {error && (
-              <div className="mb-4 p-3 bg-errBg border border-errLn rounded-lg text-sm text-err">{error}</div>
+              <div
+                className="mb-4 p-3 bg-errBg border border-errLn rounded-lg text-sm text-err whitespace-pre-wrap"
+                role="alert"
+                aria-label={error}
+              >
+                {error}
+              </div>
             )}
 
             {mode === "run" && selectedRun ? (
@@ -433,16 +594,23 @@ export default function ModelTrainingPage() {
                 <ProgressPanel snapshot={selectedRun} onStop={handleStop} isStopping={isStopping} />
               </div>
             ) : (
-              <div className="max-w-2xl space-y-6">
+              <ModelMetadataGate
+                status={modelMetadataStatus}
+                models={models}
+                error={modelMetadataError}
+                onRetry={loadModelMetadata}
+              >
+                <div className="max-w-2xl space-y-6">
                 {/* Model */}
                 <div>
-                  <label className="block text-sm font-medium text-t1 mb-1">Model</label>
+                  <label htmlFor="model-registry-key" className="block text-sm font-medium text-t1 mb-1">Model</label>
                   <select
+                    id="model-registry-key"
+                    name="model_registry_key"
                     value={modelKey}
                     onChange={(e) => setModelKey(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-ln2 rounded-lg focus:ring-2 focus:ring-ac focus:border-transparent"
                   >
-                    {models.length === 0 && <option value="mask2former">Mask2Former</option>}
                     {models.map((m) => (
                       <option key={m.registry_key} value={m.registry_key}>{m.name || m.registry_key}</option>
                     ))}
@@ -453,51 +621,139 @@ export default function ModelTrainingPage() {
                 </div>
 
                 {/* Labels */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-t1">Classes to train ({selectedLabelIds.size}/{labels.length})</label>
+                <fieldset
+                  id="training-labels"
+                  aria-describedby={`training-label-help${selectionError ? " training-label-error" : ""}`}
+                  aria-invalid={Boolean(selectionError)}
+                  className="border-0 p-0 m-0"
+                >
+                  <legend className="block text-sm font-medium text-t1 mb-1 w-full">
+                    <div className="flex items-center gap-2">
+                      <span>Classes to train ({selectedLabelIds.size}/{labels.length})</span>
+                      {(selectedModel?.tags?.target_encoding === "exclusive_hierarchy_v1" || selectedModel?.target_encoding === "exclusive_hierarchy_v1") && (
+                        <span className="bg-acS text-ac text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1 inline-flex" title="This encoded model variant supports hierarchical datasets">
+                          <Sparkles size={10} /> Hierarchy Aware
+                        </span>
+                      )}
+                    </div>
+                  </legend>
+                  <div className="flex items-center justify-end mb-1">
                     <button
                       type="button"
+                      aria-controls="training-label-options"
                       onClick={() => setSelectedLabelIds(allSelected ? new Set() : new Set(labels.map((l) => l.id)))}
                       className="text-xs text-ac hover:underline"
                     >
                       {allSelected ? "Clear all" : "Select all"}
                     </button>
                   </div>
-                  {annotationCountStatus === "loading" && (
-                    <p className="text-[11px] text-t3 mb-1" role="status">Loading annotation counts…</p>
+                  {labelStatus === RESOURCE_STATUS.LOADING && (
+                    <p className="text-[11px] text-t3 mb-1" role="status" aria-label="Loading labels">Loading labels…</p>
                   )}
-                  {annotationCountStatus === "error" && (
-                    <p className="text-[11px] text-warn mb-1" role="alert">
-                      Unable to load annotation counts. Training will be validated by the backend.
+                  {labelStatus === RESOURCE_STATUS.ERROR && (
+                    <div
+                      className="text-[11px] text-err mb-1"
+                      role="alert"
+                      aria-label={labelError || "Unable to load labels."}
+                    >
+                      <p>{labelError || "Unable to load labels."}</p>
+                      <button
+                        type="button"
+                        onClick={loadLabels}
+                        className="mt-1 font-medium underline hover:no-underline"
+                      >
+                        Retry labels
+                      </button>
+                    </div>
+                  )}
+                  {labelStatus === RESOURCE_STATUS.EMPTY && (
+                    <p
+                      className="text-xs text-t3 p-3 border border-ln rounded-lg"
+                      role="status"
+                      aria-label="No labels available for this dataset"
+                    >
+                      No labels available for this dataset.
                     </p>
                   )}
-                  <div className="max-h-44 overflow-y-auto border border-ln rounded-lg divide-y divide-ln">
-                    {labels.length === 0 && <p className="text-xs text-t3 p-3">This dataset has no labels.</p>}
-                    {labels.map((l) => {
-                      const countKnown = annotationCountStatus === "success";
-                      const count = countKnown ? (annotationCounts[l.id] ?? 0) : null;
-                      return (
-                        <label key={l.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-hv">
-                          <input type="checkbox" checked={selectedLabelIds.has(l.id)} onChange={() => toggleLabel(l.id)} className="h-4 w-4" />
-                          <span className="flex-1">{l.name}</span>
-                          <span
-                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${countKnown
-                              ? (count === 0 ? "bg-errBg text-err" : "bg-okBg text-ok")
-                              : "bg-well text-t3"
-                            }`}
-                            title={countKnown
-                              ? `${count} reviewed annotation${count === 1 ? "" : "s"}`
-                              : "Annotation count unavailable"}
-                          >
-                            {countKnown ? count : (annotationCountStatus === "loading" ? "…" : "—")}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-t3 mt-1">Multiclass by default — all labels are selected. Deselect to train a smaller model.</p>
-                </div>
+                  {annotationCountStatus === RESOURCE_STATUS.LOADING && (
+                    <p className="text-[11px] text-t3 mb-1" role="status" aria-label="Loading annotation counts">
+                      Loading annotation counts…
+                    </p>
+                  )}
+                  {annotationCountStatus === RESOURCE_STATUS.ERROR && (
+                    <div
+                      className="text-[11px] text-warn mb-1"
+                      role="alert"
+                      aria-label={annotationCountError || "Unable to load annotation counts."}
+                    >
+                      <p>{annotationCountError || "Unable to load annotation counts."} Training will be validated by the backend.</p>
+                      <button
+                        type="button"
+                        onClick={loadAnnotationCounts}
+                        className="mt-1 font-medium underline hover:no-underline"
+                      >
+                        Retry annotation counts
+                      </button>
+                    </div>
+                  )}
+                  {labelStatus === RESOURCE_STATUS.SUCCESS && (
+                    <div
+                      id="training-label-options"
+                      className="max-h-44 overflow-y-auto border border-ln rounded-lg divide-y divide-ln"
+                    >
+                      {labels.map((label) => {
+                        const checkboxId = `training-label-${label.id}`;
+                        const countKnown = annotationCountStatus === RESOURCE_STATUS.SUCCESS;
+                        const count = countKnown ? (annotationCounts[label.id] ?? 0) : null;
+                        const countId = `${checkboxId}-count`;
+                        return (
+                          <div key={label.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-hv">
+                            <input
+                              id={checkboxId}
+                              name="label_ids"
+                              type="checkbox"
+                              data-parent-id={label.parent_id ?? ""}
+                              checked={selectedLabelIds.has(label.id)}
+                              onChange={() => toggleLabel(label.id)}
+                              aria-describedby={countId}
+                              className="h-4 w-4"
+                            />
+                            <label htmlFor={checkboxId} className="flex-1 cursor-pointer">{label.name}</label>
+                            <span
+                              id={countId}
+                              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${countKnown
+                                ? (count === 0 ? "bg-errBg text-err" : "bg-okBg text-ok")
+                                : "bg-well text-t3"
+                              }`}
+                              title={countKnown
+                                ? `${count} reviewed annotation${count === 1 ? "" : "s"}`
+                                : "Annotation count unavailable"}
+                              aria-label={countKnown
+                                ? `${count} reviewed annotation${count === 1 ? "" : "s"}`
+                                : "Annotation count unavailable"}
+                            >
+                              {countKnown ? count : (annotationCountStatus === RESOURCE_STATUS.LOADING ? "…" : "—")}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectionError && (
+                    <p
+                      id="training-label-error"
+                      className="text-xs text-err mt-2"
+                      role="alert"
+                      aria-label={selectionError}
+                    >
+                      {selectionError}
+                    </p>
+                  )}
+                  <p id="training-label-help" className="text-[11px] text-t3 mt-1">
+                    Multiclass by default — all labels are selected. A single label is valid; selected ancestor and descendant paths must include every intermediate label.
+                    {(selectedModel?.tags?.target_encoding === "exclusive_hierarchy_v1" || selectedModel?.target_encoding === "exclusive_hierarchy_v1") && " When a hierarchy is selected, this model trains using the exclusive_hierarchy_v1 algorithm."}
+                  </p>
+                </fieldset>
 
                 {/* Advanced (model-declared params) */}
                 {(selectedModel?.training_parameters?.length ?? 0) > 0 && (
@@ -564,14 +820,23 @@ export default function ModelTrainingPage() {
                 )}
 
                 <button
+                  type="button"
                   onClick={handleStart}
-                  disabled={isStarting || selectedLabelIds.size === 0 || noAnnotations || Boolean(runNameError)}
+                  disabled={
+                    isStarting
+                    || labelStatus !== RESOURCE_STATUS.SUCCESS
+                    || selectedLabelIds.size === 0
+                    || noAnnotations
+                    || Boolean(selectionError)
+                    || Boolean(runNameError)
+                  }
                   className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-onAccent bg-accent rounded-lg hover:brightness-110 transition-colors disabled:opacity-60"
                 >
                   {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
                   {isStarting ? "Starting…" : "Start Training"}
                 </button>
-              </div>
+                </div>
+              </ModelMetadataGate>
             )}
           </main>
         </div>

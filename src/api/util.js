@@ -91,8 +91,19 @@ export const handleApiError = async (response) => {
                         .map((err) => `${err.loc.join(".")}: ${err.msg}`)
                         .join(", ");
                     throw new Error(`API Validation Error: ${errorMessage}`);
-                } else {
+                } else if (typeof errorData.detail === "string") {
                     throw new Error(`API Error: ${errorData.detail}`);
+                } else if (errorData.detail && typeof errorData.detail.message === "string") {
+                    // Structured backend error payload, e.g. { message, error_code, details }
+                    const { message, error_code: errorCode, details } = errorData.detail;
+                    const suffix = errorCode ? ` (${errorCode})` : "";
+                    const detailsSuffix = details && Object.keys(details).length
+                        ? `\n${JSON.stringify(details, null, 2)}`
+                        : "";
+                    throw new Error(`API Error: ${message}${suffix}${detailsSuffix}`);
+                } else {
+                    // Fallback for any other non-string detail shape
+                    throw new Error(`API Error: ${JSON.stringify(errorData.detail, null, 2)}`);
                 }
             }
 

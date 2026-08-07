@@ -458,10 +458,11 @@ class AnnotationSession {
 
   /**
    * Run instance segmentation inference
-   * @param {string} modelKey - Instance model key
+   * @param {string} modelKey - Model identifier
+   * @param {string} applyMode - 'patch' or 'replace'
    * @returns {Promise<Object>} Response with added objects (objects are added via OBJECT_ADDED WebSocket messages)
    */
-  async runInstance(modelKey) {
+  async runInstance(modelKey, applyMode = 'patch') {
     this._ensureReady();
 
     // Check if instance service is available
@@ -469,7 +470,7 @@ class AnnotationSession {
       throw new Error('Instance segmentation service is not available. Please check your connection.');
     }
 
-    const message = MessageBuilders.runInstance(modelKey);
+    const message = MessageBuilders.runInstance(modelKey, applyMode);
     return websocketService.send(message, true);
   }
 
