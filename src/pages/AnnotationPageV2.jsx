@@ -53,6 +53,15 @@ const AnnotationPageV2 = () => {
   const canAnnotate = can(Permission.ANNOTATION_CREATE);
   const [hierarchyData, setHierarchyData] = React.useState(null); // Use state instead of ref to trigger re-renders
 
+  // Do not carry contours from the previous image while the replacement
+  // websocket session is being established. Without this reset, a session
+  // switch can briefly (or permanently, if its initial OBJECTS event is
+  // missed) show the previous image's rows over the new image.
+  useEffect(() => {
+    setHierarchyData(null);
+    clearObjects();
+  }, [imageId, clearObjects]);
+
   // Helper: ensure labels are loaded (uses cache, fetches only once per dataset)
   const ensureLabelsLoaded = React.useCallback(async (dataset) => {
     // If labels are already cached for this dataset, return them
