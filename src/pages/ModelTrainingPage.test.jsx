@@ -4,7 +4,9 @@ import {
   fetchLabels,
   getInstanceLabelAnnotationCounts,
   getInstanceModels,
+  getInstanceTrainingModels,
   getInstanceTrainingRuns,
+  startInstanceTraining,
   streamInstanceTrainingProgress,
 } from "../api";
 import { useDataset } from "../contexts/DatasetContext";
@@ -14,10 +16,12 @@ jest.mock("../api", () => ({
   fetchLabels: jest.fn(),
   getInstanceLabelAnnotationCounts: jest.fn(),
   getInstanceModels: jest.fn(),
+  getInstanceTrainingModels: jest.fn(),
   getInstanceTrainingRuns: jest.fn(),
   startInstanceTraining: jest.fn(),
   streamInstanceTrainingProgress: jest.fn(),
 }));
+
 
 jest.mock("../contexts/DatasetContext", () => ({
   useDataset: jest.fn(),
@@ -61,9 +65,11 @@ function resolveSupportingRequests() {
     reviewed_annotation_counts: { 1: 1 },
   });
   getInstanceModels.mockResolvedValue({ result: [registeredModel] });
+  getInstanceTrainingModels.mockResolvedValue({ result: [registeredModel] });
   getInstanceTrainingRuns.mockResolvedValue({ runs: [] });
   streamInstanceTrainingProgress.mockImplementation(() => ({ abort: jest.fn() }));
 }
+
 
 function renderReadyPage() {
   render(<ModelTrainingPage />);
@@ -82,7 +88,7 @@ describe("ModelTrainingPage metadata and resource states", () => {
     fetchLabels.mockReturnValue(new Promise(() => {}));
     getInstanceLabelAnnotationCounts.mockReturnValue(new Promise(() => {}));
     getInstanceTrainingRuns.mockReturnValue(new Promise(() => {}));
-    getInstanceModels.mockReturnValue(new Promise(() => {}));
+    getInstanceTrainingModels.mockReturnValue(new Promise(() => {}));
 
     render(<ModelTrainingPage />);
 
@@ -92,7 +98,7 @@ describe("ModelTrainingPage metadata and resource states", () => {
   });
 
   test("renders a valid empty model state without a fallback", async () => {
-    getInstanceModels.mockResolvedValue({ result: [] });
+    getInstanceTrainingModels.mockResolvedValue({ result: [] });
 
     render(<ModelTrainingPage />);
 
@@ -102,13 +108,14 @@ describe("ModelTrainingPage metadata and resource states", () => {
   });
 
   test("shows a model load failure and retries successfully", async () => {
-    getInstanceModels.mockRejectedValueOnce(new Error("Registry unavailable"));
+    getInstanceTrainingModels.mockRejectedValueOnce(new Error("Registry unavailable"));
 
     render(<ModelTrainingPage />);
 
     expect(await screen.findByRole("alert", { name: /Registry unavailable/i })).toBeInTheDocument();
 
-    getInstanceModels.mockResolvedValueOnce({ result: [registeredModel] });
+
+    getInstanceTrainingModels.mockResolvedValueOnce({ result: [registeredModel] });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
@@ -128,7 +135,8 @@ describe("ModelTrainingPage metadata and resource states", () => {
     const flatModel = { ...registeredModel, tags: { segmentation_mode: "flat" }, registry_key: "flat-model" };
     const awareModel = { ...registeredModel, tags: { target_encoding: "exclusive_hierarchy_v1" }, registry_key: "aware-model" };
     
-    getInstanceModels.mockResolvedValue({ result: [flatModel, awareModel] });
+    getInstanceTrainingModels.mockResolvedValue({ result: [flatModel, awareModel] });
+
     
     render(<ModelTrainingPage />);
     await screen.findByRole("combobox", { name: "Model" });
@@ -357,5 +365,112 @@ describe("ModelTrainingPage hierarchy selection", () => {
 
     expect(screen.queryByRole("alert", { name: /cannot skip levels/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start Training" })).toBeEnabled();
+  });
+});
+
+describe("ModelTrainingPage hierarchy normalization confirmation", () => {
+  const hierarchyNormalizationError = {
+    error_code: "hierarchy_normalization_required",
+    details: {
+      summary: {
+        adjusted_child_count: 3,
+        excluded_image_count: 2,
+        excluded_child_count: 4,
+        sibling_overlap_pair_count: 5,
+        affected_images: [
+          { image_id: 1, file_name: "image-1", action: "normalize" },
+          { image_id: 2, file_name: "image-2", action: "exclude" },
+        ],
+      },
+    },
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockDatasetId = "42";
+    useDataset.mockReturnValue({ currentDataset: { name: "Test dataset" } });
+    resolveSupportingRequests();
+  });
+
+  async function renderPageForNormalization() {
+    await renderReadyPage();
+    await screen.findByRole("checkbox", { name: "Cell" });
+  }
+
+  test("shows the defensive normalization summary and affected images", async () => {
+    startInstanceTraining.mockRejectedValueOnce(hierarchyNormalizationError);
+    await renderPageForNormalization();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Adjust masks before training?" });
+    expect(dialog).toHaveTextContent("Images with masks adjusted1");
+    expect(dialog).toHaveTextContent("Objects with masks adjusted3");
+    expect(dialog).toHaveTextContent("Images excluded2");
+    expect(dialog).toHaveTextContent("Objects excluded4");
+    expect(dialog).toHaveTextContent("Sibling-overlap pairs5");
+    expect(dialog).toHaveTextContent("image-1");
+    expect(dialog).toHaveTextContent("source annotations are unchanged");
+  });
+
+  test("cancels without retrying or changing the strict initial request", async () => {
+    startInstanceTraining.mockRejectedValueOnce(hierarchyNormalizationError);
+    await renderPageForNormalization();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+    await screen.findByRole("dialog", { name: "Adjust masks before training?" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Adjust masks before training?" })).not.toBeInTheDocument();
+    expect(startInstanceTraining).toHaveBeenCalledTimes(1);
+    expect(startInstanceTraining.mock.calls[0][0]).not.toHaveProperty("hierarchy_conflict_policy");
+  });
+
+  test("sends normalize only on the confirmed retry", async () => {
+    startInstanceTraining
+      .mockRejectedValueOnce(hierarchyNormalizationError)
+      .mockResolvedValueOnce({ task_id: "normalized-task" });
+    await renderPageForNormalization();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+    await screen.findByRole("dialog", { name: "Adjust masks before training?" });
+    fireEvent.click(screen.getByRole("button", { name: "Adjust masks and continue" }));
+
+    await waitFor(() => expect(startInstanceTraining).toHaveBeenCalledTimes(2));
+    expect(startInstanceTraining.mock.calls[0][0]).not.toHaveProperty("hierarchy_conflict_policy");
+    expect(startInstanceTraining.mock.calls[1][0]).toMatchObject({
+      hierarchy_conflict_policy: "normalize",
+    });
+  });
+
+  test("shows the run after a successful normalization retry", async () => {
+    startInstanceTraining
+      .mockRejectedValueOnce(hierarchyNormalizationError)
+      .mockResolvedValueOnce({ task_id: "normalized-task" });
+    await renderPageForNormalization();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+    await screen.findByRole("dialog", { name: "Adjust masks before training?" });
+    fireEvent.click(screen.getByRole("button", { name: "Adjust masks and continue" }));
+
+    expect(await screen.findByText("Waiting for worker…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start Training" })).not.toBeInTheDocument();
+  });
+
+  test("explains when the pre-training hierarchy check is taking a while", async () => {
+    jest.useFakeTimers();
+    const pendingStart = deferred();
+    startInstanceTraining.mockReturnValueOnce(pendingStart.promise);
+    await renderPageForNormalization();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start Training" }));
+    expect(screen.getByText(/Preparing the training data/i)).toBeInTheDocument();
+
+    act(() => jest.advanceTimersByTime(10000));
+    expect(screen.getByText(/taking longer than usual/i)).toBeInTheDocument();
+
+    pendingStart.resolve({ task_id: "delayed-task" });
+    expect(await screen.findByText("Waiting for worker…")).toBeInTheDocument();
+    jest.useRealTimers();
   });
 });

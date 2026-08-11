@@ -2,14 +2,29 @@ import { handleApiError, getAuthHeaders } from "./util";
 import { API_BASE_URL } from "./config";
 
 /**
- * List available instance segmentation models (from MLflow via the gateway).
+ * List available inference-ready instance segmentation models for a dataset.
+ * @param {number} [datasetId]
  */
-export const getInstanceModels = async () => {
-    const response = await fetch(`${API_BASE_URL}/instance_segmentation/models`, {
+export const getInstanceModels = async (datasetId) => {
+    const url = datasetId
+        ? `${API_BASE_URL}/instance_segmentation/models?dataset_id=${datasetId}`
+        : `${API_BASE_URL}/instance_segmentation/models`;
+    const response = await fetch(url, {
         headers: getAuthHeaders(),
     });
     return handleApiError(response);
 };
+
+/**
+ * List available training base models for fine-tuning.
+ */
+export const getInstanceTrainingModels = async () => {
+    const response = await fetch(`${API_BASE_URL}/instance_segmentation/training/models`, {
+        headers: getAuthHeaders(),
+    });
+    return handleApiError(response);
+};
+
 
 /**
  * Fetch reviewed annotation counts per label ID for a dataset.
@@ -38,13 +53,40 @@ export const startInstanceTraining = async ({
     model_registry_key = "mask2former",
     hyper_parameter = {},
     model_run_name = undefined,
+    hierarchy_conflict_policy = undefined,
 }) => {
     const response = await fetch(`${API_BASE_URL}/instance_segmentation/training/start`, {
         method: "POST",
         headers: getAuthHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ dataset_id, label_ids, model_registry_key, hyper_parameter, model_run_name }),
+        body: JSON.stringify({
+            dataset_id,
+            label_ids,
+            model_registry_key,
+            hyper_parameter,
+            model_run_name,
+            ...(hierarchy_conflict_policy === undefined ? {} : { hierarchy_conflict_policy }),
+        }),
     });
-    return handleApiError(response);
+
+    // Keep structured training conflict fields available to the page while
+    // preserving the shared API error behavior and its auth handling.
+    const errorPayloadPromise = !response.ok && typeof response.clone === "function"
+        ? response.clone().json().catch(() => null)
+        : Promise.resolve(null);
+
+    try {
+        return await handleApiError(response);
+    } catch (error) {
+        const errorPayload = await errorPayloadPromise;
+        const detail = errorPayload?.detail && typeof errorPayload.detail === "object"
+            ? errorPayload.detail
+            : errorPayload;
+        if (detail && typeof detail === "object") {
+            if (typeof detail.error_code === "string") error.error_code = detail.error_code;
+            if (detail.details && typeof detail.details === "object") error.details = detail.details;
+        }
+        throw error;
+    }
 };
 
 /**

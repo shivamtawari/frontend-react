@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   useAvailablePromptedModels,
   useAvailableSuggestionModels,
@@ -36,13 +37,14 @@ const getFirstModelId = (models) => {
  *
  * Lifted verbatim from the old Services component so the options drawer only
  * has to render. The behaviour it preserves:
- *  - fetch each model list once,
+ *  - fetch each model list once per active dataset,
  *  - force a deterministic default selection as soon as a list arrives,
  *  - push every selection change to the backend so the model is warm,
  *  - open the instance warning modal both from its Run button and from the
  *    `3` shortcut, which sets `instanceRunRequested` in the store.
  */
 export default function useAnnotationServices() {
+  const { datasetId } = useParams();
   const fetchPromptedModels = useFetchAvailablePromptedModels();
   const fetchSuggestionModels = useFetchAvailableSuggestionModels();
   const fetchInstanceModels = useFetchAvailableInstanceModels();
@@ -87,8 +89,14 @@ export default function useAnnotationServices() {
   useEffect(() => {
     if (availablePromptedModels.length === 0) fetchPromptedModels();
     if (availableSuggestionModels.length === 0) fetchSuggestionModels();
-    if (availableInstanceModels.length === 0) fetchInstanceModels();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // The backend requires dataset_id for trained instance models. The route
+    // parameter is available before DatasetContext finishes loading and also
+    // changes when the workspace is switched to another dataset.
+    fetchInstanceModels(datasetId || null);
+  }, [datasetId, fetchInstanceModels]);
 
   useEffect(() => {
     if (!promptedModel) {

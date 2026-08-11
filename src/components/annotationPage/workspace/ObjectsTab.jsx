@@ -196,10 +196,14 @@ const ObjectsTab = () => {
   const handleDragOver = (object) => (event) => {
     if (drag.id == null || drag.id === object.id) return;
     event.preventDefault();
+    // Compute this before entering the state updater. React may run the updater
+    // after the synthetic event has been released, at which point
+    // event.currentTarget is null.
+    const zone = dropZoneFor(event, event.currentTarget);
     setDrag((current) => ({
       ...current,
       overId: object.id,
-      zone: dropZoneFor(event, event.currentTarget),
+      zone,
     }));
   };
 

@@ -44,15 +44,33 @@ const getUserId = () => {
   return null;
 };
 
+const toSameOriginWebSocketUrl = (path) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (typeof window === 'undefined') {
+    return normalizedPath;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${normalizedPath}`.replace(/\/$/, '');
+};
+
 const getWsBaseUrl = () => {
   const wsEnv = process.env.REACT_APP_WS_URL;
   if (wsEnv && wsEnv.trim()) {
-    return wsEnv.trim().replace(/\/$/, '');
+    const configuredUrl = wsEnv.trim().replace(/\/$/, '');
+    if (configuredUrl.startsWith('/')) {
+      return toSameOriginWebSocketUrl(configuredUrl);
+    }
+    return configuredUrl;
   }
 
   const apiEnv = process.env.REACT_APP_API_BASE_URL;
   if (apiEnv && apiEnv.trim()) {
     const apiBase = apiEnv.trim().replace(/\/$/, '');
+    if (apiBase.startsWith('/')) {
+      return toSameOriginWebSocketUrl(apiBase);
+    }
     if (apiBase.startsWith('https://')) {
       return apiBase.replace(/^https:\/\//, 'wss://');
     }
@@ -61,7 +79,9 @@ const getWsBaseUrl = () => {
     }
   }
 
-  return 'ws://localhost:8000';
+  return typeof window === 'undefined'
+    ? 'ws://localhost:8000'
+    : toSameOriginWebSocketUrl('/api');
 };
 
 /**
@@ -614,6 +634,5 @@ class AnnotationSession {
 const annotationSession = new AnnotationSession();
 
 export default annotationSession;
-
 
 

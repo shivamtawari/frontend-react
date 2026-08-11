@@ -169,14 +169,30 @@ export const createModelsSlice = (set, get) => ({
     }
   },
 
-  fetchAvailableInstanceModels: async () => {
+  fetchAvailableInstanceModels: async (datasetId) => {
+    const activeDatasetId = datasetId || get().images?.currentImage?.dataset_id || null;
+    const requestId = (get().models.instanceModelsRequestId || 0) + 1;
+
     set((state) => {
+      state.models.instanceModelsRequestId = requestId;
+      state.models.availableInstanceModels = [];
+      state.models.instanceModel = null;
       state.models.isLoadingInstanceModels = true;
     });
+
+    if (!activeDatasetId) {
+      set((state) => {
+        if (state.models.instanceModelsRequestId === requestId) {
+          state.models.isLoadingInstanceModels = false;
+        }
+      });
+      return;
+    }
+
     await get().ensureFavoritesLoaded();
 
     try {
-      const result = await getInstanceModels();
+      const result = await getInstanceModels(activeDatasetId);
       const modelsList = Array.isArray(result?.result) ? result.result : [];
       if (result?.success && modelsList.length > 0) {
         const transformedModels = modelsList.map(model => ({
@@ -188,6 +204,7 @@ export const createModelsSlice = (set, get) => ({
         }));
 
         set((state) => {
+          if (state.models.instanceModelsRequestId !== requestId) return;
           state.models.availableInstanceModels = transformedModels;
           state.models.isLoadingInstanceModels = false;
           if (!state.models.instanceModel) {
@@ -198,16 +215,21 @@ export const createModelsSlice = (set, get) => ({
       } else {
         console.warn('No instance models returned from backend');
         set((state) => {
+          if (state.models.instanceModelsRequestId !== requestId) return;
           state.models.availableInstanceModels = [];
           state.models.isLoadingInstanceModels = false;
+          state.models.instanceModel = null;
         });
       }
     } catch (error) {
       console.error('Error fetching instance models:', error);
       set((state) => {
+        if (state.models.instanceModelsRequestId !== requestId) return;
         state.models.availableInstanceModels = [];
         state.models.isLoadingInstanceModels = false;
+        state.models.instanceModel = null;
       });
     }
   },
+
 });

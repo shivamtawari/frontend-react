@@ -148,6 +148,7 @@ export const initialState = {
     availablePromptedModels: [], // List of available AI models from backend
     availableSuggestionModels: [], // List of available suggestion models from backend
     availableInstanceModels: [], // List of available instance segmentation models from backend
+    instanceModelsRequestId: 0, // Guards against stale responses after a dataset switch
     isLoadingModels: false,
     isLoadingSuggestionModels: false,
     isLoadingInstanceModels: false,
@@ -187,4 +188,3 @@ export const initialState = {
     isReconnecting: false,
   },
 };
-

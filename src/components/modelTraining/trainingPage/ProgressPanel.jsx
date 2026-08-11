@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Cpu, StopCircle, Loader2 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -6,6 +6,7 @@ import {
 import useThemeColors from "../../../hooks/useThemeColors";
 
 const TERMINAL = new Set(["SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT"]);
+const LONG_QUEUE_WAIT_MS = 60_000;
 const STATE_STYLE = {
   PROGRESS: "bg-acS text-ac",
   SUCCESS: "bg-okBg text-ok",
@@ -17,12 +18,23 @@ const STATE_STYLE = {
 
 export default function ProgressPanel({ snapshot, onStop, isStopping }) {
   const { colors } = useThemeColors();
+  const [now, setNow] = useState(Date.now());
   const total = snapshot.total_epochs || 0;
   const current = snapshot.epoch || 0;
   const percent = total ? Math.min(100, Math.round((current / total) * 100)) : 0;
   const lossData = (snapshot.loss || []).map((d) => ({ epoch: d.epoch, loss: d.value }));
   const trainingParameters = snapshot.training_parameters || {};
-  const isActive = !TERMINAL.has(snapshot.state) && snapshot.state !== "starting";
+  const isActive = !TERMINAL.has(snapshot.state);
+  const startTime = snapshot.start_time ? new Date(snapshot.start_time).getTime() : null;
+  const isWaitingLongerThanUsual = snapshot.state === "starting"
+    && Number.isFinite(startTime)
+    && now - startTime >= LONG_QUEUE_WAIT_MS;
+
+  useEffect(() => {
+    if (snapshot.state !== "starting") return undefined;
+    const interval = window.setInterval(() => setNow(Date.now()), 5_000);
+    return () => window.clearInterval(interval);
+  }, [snapshot.state]);
 
   return (
     <div className="space-y-4">
@@ -31,7 +43,12 @@ export default function ProgressPanel({ snapshot, onStop, isStopping }) {
           {snapshot.state}
         </span>
         {snapshot.state === "starting" ? (
-          <span className="flex items-center gap-1"><Loader2 className="w-4 h-4 animate-spin" /> Waiting for worker…</span>
+          <span className="flex items-center gap-1">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            {isWaitingLongerThanUsual
+              ? "This is taking longer than usual. You can cancel the queued job."
+              : "Waiting for worker…"}
+          </span>
         ) : (
           <span className="flex items-center gap-1">
             <Cpu className="w-4 h-4 text-ac" /> Epoch {current}{total ? ` / ${total}` : ""}
@@ -107,7 +124,7 @@ export default function ProgressPanel({ snapshot, onStop, isStopping }) {
           className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-onAccent bg-err rounded-lg hover:brightness-110 transition-colors disabled:opacity-60"
         >
           {isStopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <StopCircle className="w-4 h-4" />}
-          {isStopping ? "Stopping…" : "Stop Training"}
+          {isStopping ? "Stopping…" : snapshot.state === "starting" ? "Cancel queued training" : "Stop Training"}
         </button>
       )}
     </div>

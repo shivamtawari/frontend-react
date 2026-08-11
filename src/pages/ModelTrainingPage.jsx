@@ -16,9 +16,10 @@ import {
 } from "../components/modelTraining/labelHierarchy";
 import {
   fetchLabels,
-  getInstanceModels,
+  getInstanceTrainingModels,
   getInstanceTrainingRuns,
   startInstanceTraining,
+
   cancelInstanceTraining,
   streamInstanceTrainingProgress,
   getInstanceLabelAnnotationCounts,
@@ -66,6 +67,51 @@ const getRunNameError = (value) => {
   return null;
 };
 
+const HIERARCHY_NORMALIZATION_ERROR_CODE = "hierarchy_normalization_required";
+
+const getHierarchyNormalizationPrompt = (error) => {
+  const errorCode = error?.error_code || error?.errorCode;
+  if (errorCode !== HIERARCHY_NORMALIZATION_ERROR_CODE) return null;
+
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  const summary = details.summary && typeof details.summary === "object" ? details.summary : {};
+  const affectedImages = Array.isArray(summary.affected_images) ? summary.affected_images : [];
+  const hasImageActions = affectedImages.some(
+    (image) => image && typeof image === "object" && typeof image.action === "string",
+  );
+  return {
+    summary,
+    affectedImages,
+    adjustedImageCount: summary.adjusted_image_count ?? (
+      hasImageActions
+        ? affectedImages.filter((image) => image.action === "normalize").length
+        : undefined
+    ),
+  };
+};
+
+const safeSummaryCount = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return "Unavailable";
+};
+
+const getAffectedImageLabel = (image, index) => {
+  if (typeof image === "string" || typeof image === "number") return String(image);
+  if (image && typeof image === "object") {
+    const imageIdentifier = image.name
+      ?? image.filename
+      ?? image.file_name
+      ?? image.image_name
+      ?? image.id
+      ?? image.image_id;
+    if (imageIdentifier !== undefined && imageIdentifier !== null) return String(imageIdentifier);
+  }
+  return `Affected image ${index + 1}`;
+};
+
 export default function ModelTrainingPage() {
   const { datasetId } = useParams();
   const { currentDataset } = useDataset();
@@ -86,6 +132,7 @@ export default function ModelTrainingPage() {
   const [selectedRun, setSelectedRun] = useState(null);
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [startTakingLonger, setStartTakingLonger] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [error, setError] = useState(null);
   const [annotationCounts, setAnnotationCounts] = useState({});
@@ -94,6 +141,17 @@ export default function ModelTrainingPage() {
   const [runStatus, setRunStatus] = useState(RESOURCE_STATUS.LOADING);
   const [runError, setRunError] = useState(null);
   const [modelRunName, setModelRunName] = useState("");
+  const [hierarchyNormalization, setHierarchyNormalization] = useState(null);
+
+  useEffect(() => {
+    if (!isStarting) {
+      setStartTakingLonger(false);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setStartTakingLonger(true), 10000);
+    return () => window.clearTimeout(timer);
+  }, [isStarting]);
 
   const datasetGenerationRef = useRef(0);
   const labelRequestRef = useRef(0);
@@ -233,8 +291,9 @@ export default function ModelTrainingPage() {
     setHyperValues({});
 
     try {
-      const modelRes = await getInstanceModels();
+      const modelRes = await getInstanceTrainingModels();
       if (requestId !== modelMetadataRequestRef.current) return;
+
       if (!Array.isArray(modelRes?.result)) {
         throw new Error("Training models response was invalid.");
       }
@@ -281,6 +340,7 @@ export default function ModelTrainingPage() {
     setIsStarting(false);
     setIsStopping(false);
     setError(null);
+    setHierarchyNormalization(null);
     setModelRunName("");
     setHyperValues({});
 
@@ -391,7 +451,10 @@ export default function ModelTrainingPage() {
     return next;
   });
 
-  const handleStart = async () => {
+  const handleStart = async (hierarchyConflictPolicy = undefined) => {
+    const requestedConflictPolicy = typeof hierarchyConflictPolicy === "string"
+      ? hierarchyConflictPolicy
+      : undefined;
     const selectionValidation = validateLabelSelection(labels, selectedLabelIds);
     if (
       getRunNameError(modelRunName)
@@ -403,16 +466,22 @@ export default function ModelTrainingPage() {
     const requestedDatasetId = datasetId;
     const generation = datasetGenerationRef.current;
     setError(null);
+    setHierarchyNormalization(null);
     setIsStarting(true);
     try {
-      const res = await startInstanceTraining({
+      const trainingConfig = {
         dataset_id: Number(datasetId),
         // Empty = all labels; sending the explicit selection keeps intent clear.
         label_ids: Array.from(selectedLabelIds),
         model_registry_key: modelKey,
         hyper_parameter: hyperValues,
         model_run_name: modelRunName.trim() || undefined,
-      });
+      };
+      if (requestedConflictPolicy !== undefined) {
+        trainingConfig.hierarchy_conflict_policy = requestedConflictPolicy;
+      }
+
+      const res = await startInstanceTraining(trainingConfig);
       if (
         datasetGenerationRef.current !== generation
         || String(datasetId) !== String(requestedDatasetId)
@@ -444,7 +513,12 @@ export default function ModelTrainingPage() {
         datasetGenerationRef.current === generation
         && String(datasetId) === String(requestedDatasetId)
       ) {
-        setError(err.message || "Failed to start training.");
+        const normalizationPrompt = getHierarchyNormalizationPrompt(err);
+        if (normalizationPrompt) {
+          setHierarchyNormalization(normalizationPrompt);
+        } else {
+          setError(err.message || "Failed to start training.");
+        }
       }
     } finally {
       if (
@@ -497,6 +571,7 @@ export default function ModelTrainingPage() {
     setActiveTaskId(null);
     setSelectedRun(null);
     setMode("config");
+    setHierarchyNormalization(null);
   };
 
   const allSelected = labels.length > 0 && selectedLabelIds.size === labels.length;
@@ -587,6 +662,79 @@ export default function ModelTrainingPage() {
               >
                 {error}
               </div>
+            )}
+
+            {hierarchyNormalization && (
+              <section
+                className="mb-4 max-w-2xl rounded-lg border border-warnLn bg-warnBg p-4 text-sm text-t1"
+                role="dialog"
+                aria-modal="false"
+                aria-labelledby="hierarchy-normalization-title"
+                aria-describedby="hierarchy-normalization-description"
+              >
+                <h2 id="hierarchy-normalization-title" className="font-semibold">
+                  Adjust masks before training?
+                </h2>
+                <p id="hierarchy-normalization-description" className="mt-1 text-t2">
+                  The selected hierarchy has overlapping sibling masks. You can continue with normalized masks for the training export only; source annotations are unchanged.
+                </p>
+                <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt className="text-t2">Images with masks adjusted</dt>
+                    <dd className="font-semibold">{safeSummaryCount(hierarchyNormalization.adjustedImageCount)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-t2">Objects with masks adjusted</dt>
+                    <dd className="font-semibold">{safeSummaryCount(hierarchyNormalization.summary.adjusted_child_count)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-t2">Images excluded</dt>
+                    <dd className="font-semibold">{safeSummaryCount(hierarchyNormalization.summary.excluded_image_count)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-t2">Objects excluded</dt>
+                    <dd className="font-semibold">{safeSummaryCount(hierarchyNormalization.summary.excluded_child_count)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-t2">Sibling-overlap pairs</dt>
+                    <dd className="font-semibold">{safeSummaryCount(hierarchyNormalization.summary.sibling_overlap_pair_count)}</dd>
+                  </div>
+                </dl>
+                {hierarchyNormalization.affectedImages.length > 0 && (
+                  <div className="mt-3 text-xs">
+                    <p className="text-t2">Affected images</p>
+                    <ul className="mt-1 list-disc pl-5">
+                      {hierarchyNormalization.affectedImages.slice(0, 10).map((image, index) => (
+                        <li key={`${getAffectedImageLabel(image, index)}-${index}`}>
+                          {getAffectedImageLabel(image, index)}
+                        </li>
+                      ))}
+                    </ul>
+                    {hierarchyNormalization.affectedImages.length > 10 && (
+                      <p className="mt-1 text-t2">
+                        Plus {hierarchyNormalization.affectedImages.length - 10} more affected images.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHierarchyNormalization(null)}
+                    className="rounded-lg border border-ln2 px-3 py-2 font-medium text-t2 hover:text-t1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleStart("normalize")}
+                    disabled={isStarting}
+                    className="rounded-lg bg-accent px-3 py-2 font-medium text-onAccent hover:brightness-110 disabled:opacity-60"
+                  >
+                    Adjust masks and continue
+                  </button>
+                </div>
+              </section>
             )}
 
             {mode === "run" && selectedRun ? (
@@ -835,6 +983,13 @@ export default function ModelTrainingPage() {
                   {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
                   {isStarting ? "Starting…" : "Start Training"}
                 </button>
+                {isStarting && (
+                  <p className="mt-2 text-xs text-t3" role="status" aria-live="polite">
+                    {startTakingLonger
+                      ? "This is taking longer than usual. The server is still checking your annotations; please keep this page open."
+                      : "Preparing the training data and checking the hierarchy…"}
+                  </p>
+                )}
                 </div>
               </ModelMetadataGate>
             )}
