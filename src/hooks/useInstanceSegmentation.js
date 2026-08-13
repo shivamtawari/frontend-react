@@ -14,7 +14,7 @@ export function useInstanceSegmentation(onSuccess, onError) {
   const setIsRunning = useSetIsRunningInstance();
   const instanceModelId = useInstanceModel(); // This is a string ID, not an object
 
-  const runInstance = useCallback(async () => {
+  const runInstance = useCallback(async (writeMode = 'patch') => {
     if (!instanceModelId) {
       const error = new Error('Please select an instance segmentation model first');
       if (onError) {
@@ -42,7 +42,8 @@ export function useInstanceSegmentation(onSuccess, onError) {
       // Call WebSocket method - objects will be added automatically via OBJECT_ADDED messages
       // instanceModelId is already the string identifier we need
       const response = await annotationSession.runInstance(
-        instanceModelId  // Model identifier (string)
+        instanceModelId, // Model identifier (string)
+        writeMode
       );
 
       if (!response.success) {

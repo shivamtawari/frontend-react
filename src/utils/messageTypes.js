@@ -46,6 +46,14 @@ export const CLIENT_MESSAGE_TYPES = {
   FINISH_ANNOTATION: 'finish_annotation',
 };
 
+/**
+ * How interactive instance-segmentation predictions are written.
+ */
+export const INSTANCE_WRITE_MODES = {
+  PATCH: 'patch',
+  OVERRIDE: 'override',
+};
+
 // ==================== SERVER MESSAGE TYPES ====================
 
 /**
@@ -277,11 +285,13 @@ export const MessageBuilders = {
   /**
    * Request instance segmentation inference
    * @param {string} modelKey - Instance model key
+   * @param {'patch'|'override'} writeMode - How predictions are applied to existing contours
    */
-  runInstance: (modelKey) => createMessage(
+  runInstance: (modelKey, writeMode = INSTANCE_WRITE_MODES.PATCH) => createMessage(
     CLIENT_MESSAGE_TYPES.INSTANCE_INFERENCE,
     {
       model_registry_key: modelKey,
+      write_mode: writeMode,
     }
   ),
 
@@ -350,5 +360,4 @@ export const extractError = (message) => ({
   data: message?.data || null,
   id: message?.id || null,
 });
-
 

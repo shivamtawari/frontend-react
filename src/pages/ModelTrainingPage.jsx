@@ -32,6 +32,12 @@ const STATE_STYLE = {
 
 const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString() : "—");
 const lastLoss = (snap) => (snap?.loss?.length ? snap.loss[snap.loss.length - 1].value : null);
+const formatScore = (value) => {
+  const numeric = Number(value);
+  return value == null || value === "" || !Number.isFinite(numeric)
+    ? "—"
+    : `${(numeric * 100).toFixed(1)}%`;
+};
 const RUN_NAME_PATTERN = /^[\p{L}\p{N}_\-\s]{1,80}$/u;
 
 const mergeRunSnapshot = (run, snapshot) => ({
@@ -44,6 +50,9 @@ const mergeRunSnapshot = (run, snapshot) => ({
   training_parameters: Object.keys(snapshot.training_parameters || {}).length
     ? snapshot.training_parameters
     : run.training_parameters,
+  validation_metrics: snapshot.validation_metrics ?? run.validation_metrics,
+  validation_metrics_unavailable: snapshot.validation_metrics_unavailable
+    ?? run.validation_metrics_unavailable,
   start_time: snapshot.start_time ?? run.start_time,
 });
 
@@ -84,7 +93,104 @@ function RunCard({ run, selected, onClick }) {
   );
 }
 
-function ProgressPanel({ snapshot, onStop, isStopping }) {
+function ValidationMetrics({ metrics, labels }) {
+  if (!metrics) return null;
+  const labelNames = new Map((labels || []).map((label) => [Number(label.id), label.name]));
+  const rows = Array.isArray(metrics.per_label) ? metrics.per_label : [];
+  const hasInstanceMetrics = [metrics.ap, metrics.ap50, metrics.ap75]
+    .some((value) => value != null && value !== "");
+
+  return (
+    <div className="p-4 rounded-lg border border-ln bg-well">
+      <h3 className="text-sm font-semibold text-t1">Performance metrics</h3>
+      <p className="text-[11px] text-t3 mt-1 mb-3">
+        Checked on images that were not used during training. For every score below, higher is better.
+      </p>
+      {hasInstanceMetrics && (
+        <div className="mb-4">
+          <h4 className="text-xs font-semibold text-t1">Instance metrics</h4>
+          <p className="text-[11px] text-t3 mt-1 mb-3">
+            AP (average precision) shows how well the model finds complete objects while balancing missed objects and extra detections.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+            <div className="p-3 rounded-lg bg-p1 border border-acLn">
+              <span className="block text-[11px] text-t3">AP (primary instance score)</span>
+              <span className="block mt-1 text-2xl font-semibold text-t1">{formatScore(metrics.ap)}</span>
+            </div>
+            <div className="p-3 rounded-lg bg-p1 border border-ln">
+              <span className="block text-[11px] text-t3">AP50 · 50% overlap match</span>
+              <span className="block mt-1 text-2xl font-semibold text-t1">{formatScore(metrics.ap50)}</span>
+            </div>
+            <div className="p-3 rounded-lg bg-p1 border border-ln">
+              <span className="block text-[11px] text-t3">AP75 · 75% overlap match</span>
+              <span className="block mt-1 text-2xl font-semibold text-t1">{formatScore(metrics.ap75)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="border-t border-ln pt-4">
+        <h4 className="text-xs font-semibold text-t1">Pixel/mask-area metrics</h4>
+        <p className="text-[11px] text-t3 mt-1 mb-3">
+          These scores compare the predicted mask area with the real mask area.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-t3 mb-4">
+          <p><span className="font-medium text-t2">IoU:</span> how much the predicted area overlaps the real area.</p>
+          <p><span className="font-medium text-t2">F1 score:</span> balance between missed and extra predicted area.</p>
+          <p><span className="font-medium text-t2">Pixel precision:</span> how much of the predicted area is correct.</p>
+          <p><span className="font-medium text-t2">Recall:</span> how much of the real area the model found.</p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="p-3 rounded-lg bg-p1 border border-ln">
+            <span className="block h-8 text-[11px] text-t3">Overall IoU (higher is better)</span>
+            <span className="text-lg font-semibold text-t1">{formatScore(metrics.macro_iou)}</span>
+          </div>
+          <div className="p-3 rounded-lg bg-p1 border border-ln">
+            <span className="block h-8 text-[11px] text-t3">Overall F1 (higher is better)</span>
+            <span className="text-lg font-semibold text-t1">{formatScore(metrics.macro_f1)}</span>
+          </div>
+          <div className="p-3 rounded-lg bg-p1 border border-ln">
+            <span className="block h-8 text-[11px] text-t3">Pixel precision (higher is better)</span>
+            <span className="text-lg font-semibold text-t1">{formatScore(metrics.macro_precision)}</span>
+          </div>
+          <div className="p-3 rounded-lg bg-p1 border border-ln">
+            <span className="block h-8 text-[11px] text-t3">Overall recall (higher is better)</span>
+            <span className="text-lg font-semibold text-t1">{formatScore(metrics.macro_recall)}</span>
+          </div>
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-t3 border-b border-ln">
+                <th className="py-2 pr-3 font-medium">Label</th>
+                <th className="py-2 px-3 font-medium text-right">IoU</th>
+                <th className="py-2 px-3 font-medium text-right">F1 score</th>
+                <th className="py-2 px-3 font-medium text-right">Precision</th>
+                <th className="py-2 pl-3 font-medium text-right">Recall</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.label_id} className="border-b border-ln last:border-0">
+                  <td className="py-2 pr-3 text-t1">
+                    {labelNames.get(Number(row.label_id)) || `Label ${row.label_id}`}
+                  </td>
+                  <td className="py-2 px-3 text-right text-t2">{formatScore(row.iou)}</td>
+                  <td className="py-2 px-3 text-right text-t2">{formatScore(row.f1)}</td>
+                  <td className="py-2 px-3 text-right text-t2">{formatScore(row.precision)}</td>
+                  <td className="py-2 pl-3 text-right text-t2">{formatScore(row.recall)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProgressPanel({ snapshot, labels, onStop, isStopping }) {
   const { colors } = useThemeColors();
   const total = snapshot.total_epochs || 0;
   const current = snapshot.epoch || 0;
@@ -132,7 +238,7 @@ function ProgressPanel({ snapshot, onStop, isStopping }) {
         <div>
           <h3 className="text-sm font-semibold text-t1">Training loss</h3>
           <p className="text-[11px] text-t3 mb-2">
-            Mask2Former combined loss (classification + mask + dice), averaged per epoch. Lower is better.
+            Mask2Former training loss, averaged per epoch. Lower is better. This is a debugging signal, not the model-quality score.
           </p>
           <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -163,6 +269,14 @@ function ProgressPanel({ snapshot, onStop, isStopping }) {
         <p className="text-sm text-t3">No loss logged yet.</p>
       )}
 
+      {snapshot.validation_metrics ? (
+        <ValidationMetrics metrics={snapshot.validation_metrics} labels={labels} />
+      ) : snapshot.validation_metrics_unavailable ? (
+        <p className="text-sm text-t3">
+          Validation metrics are unavailable because this dataset does not have enough images for a held-out set.
+        </p>
+      ) : null}
+
       {isActive && (
         <button
           onClick={onStop}
@@ -183,7 +297,9 @@ export default function ModelTrainingPage() {
 
   const [labels, setLabels] = useState([]);
   const [models, setModels] = useState([]);
-  const [modelKey, setModelKey] = useState("mask2former");
+  const [modelKey, setModelKey] = useState("");
+  const [modelLoadStatus, setModelLoadStatus] = useState("loading");
+  const [modelLoadError, setModelLoadError] = useState(null);
   const [selectedLabelIds, setSelectedLabelIds] = useState(() => new Set());
   const [hyperValues, setHyperValues] = useState({});
   const [showAdvanced, setShowAdvanced] = useState(true);
@@ -226,6 +342,10 @@ export default function ModelTrainingPage() {
   // Initial load: labels, models, runs.
   useEffect(() => {
     if (!datasetId) return;
+    setModels([]);
+    setModelKey("");
+    setModelLoadStatus("loading");
+    setModelLoadError(null);
     setAnnotationCountStatus("loading");
     setAnnotationCounts({});
     (async () => {
@@ -250,11 +370,20 @@ export default function ModelTrainingPage() {
       }
       try {
         const modelRes = await getInstanceModels();
-        const list = Array.isArray(modelRes?.result) ? modelRes.result : [];
+        const list = Array.isArray(modelRes?.result)
+          ? modelRes.result.filter((model) => model?.registry_key && model.trainable === true)
+          : [];
+        if (modelRes?.success !== true || list.length === 0) {
+          throw new Error("No trainable instance segmentation models are available.");
+        }
         setModels(list);
-        if (list.length > 0) setModelKey(list[0].registry_key);
+        setModelKey(list[0].registry_key);
+        setModelLoadStatus("success");
       } catch (e) {
-        // fall back to default key
+        setModels([]);
+        setModelKey("");
+        setModelLoadStatus("error");
+        setModelLoadError(e.message || "Unable to load trainable instance segmentation models.");
       }
     })();
     loadRuns();
@@ -304,7 +433,7 @@ export default function ModelTrainingPage() {
   });
 
   const handleStart = async () => {
-    if (getRunNameError(modelRunName)) return;
+    if (modelLoadStatus !== "success" || !selectedModel || getRunNameError(modelRunName)) return;
     setError(null);
     setIsStarting(true);
     try {
@@ -430,10 +559,32 @@ export default function ModelTrainingPage() {
 
             {mode === "run" && selectedRun ? (
               <div className="max-w-3xl">
-                <ProgressPanel snapshot={selectedRun} onStop={handleStop} isStopping={isStopping} />
+                <ProgressPanel snapshot={selectedRun} labels={labels} onStop={handleStop} isStopping={isStopping} />
               </div>
             ) : (
-              <div className="max-w-2xl space-y-6">
+              <div className="max-w-2xl">
+                {modelLoadStatus === "loading" && (
+                  <div className="p-4 rounded-xl border border-ln bg-well" role="status">
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-hv text-t3 cursor-not-allowed"
+                    >
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading models…
+                    </button>
+                  </div>
+                )}
+
+                {modelLoadStatus === "error" && (
+                  <div className="p-4 rounded-xl border border-errLn bg-errBg text-sm text-err" role="alert">
+                    <p className="font-medium">Unable to load model configuration.</p>
+                    <p className="mt-1">{modelLoadError}</p>
+                  </div>
+                )}
+
+                {modelLoadStatus === "success" && (
+                  <div className="space-y-6">
                 {/* Model */}
                 <div>
                   <label className="block text-sm font-medium text-t1 mb-1">Model</label>
@@ -442,7 +593,6 @@ export default function ModelTrainingPage() {
                     onChange={(e) => setModelKey(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-ln2 rounded-lg focus:ring-2 focus:ring-ac focus:border-transparent"
                   >
-                    {models.length === 0 && <option value="mask2former">Mask2Former</option>}
                     {models.map((m) => (
                       <option key={m.registry_key} value={m.registry_key}>{m.name || m.registry_key}</option>
                     ))}
@@ -565,12 +715,14 @@ export default function ModelTrainingPage() {
 
                 <button
                   onClick={handleStart}
-                  disabled={isStarting || selectedLabelIds.size === 0 || noAnnotations || Boolean(runNameError)}
+                  disabled={modelLoadStatus !== "success" || !selectedModel || isStarting || selectedLabelIds.size === 0 || noAnnotations || Boolean(runNameError)}
                   className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-onAccent bg-accent rounded-lg hover:brightness-110 transition-colors disabled:opacity-60"
                 >
                   {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
                   {isStarting ? "Starting…" : "Start Training"}
                 </button>
+                  </div>
+                )}
               </div>
             )}
           </main>

@@ -2,9 +2,8 @@ import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 /**
- * Confirms an instance-segmentation run, which replaces every contour on the
- * mask. Destructive enough to warrant the danger treatment rather than the
- * primary one.
+ * Lets the annotator choose how instance-segmentation predictions are written.
+ * Patch is the safe default; Override is deliberately treated as destructive.
  */
 const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
   if (!isOpen) return null;
@@ -18,9 +17,8 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
     >
       <div className="w-[360px] max-w-[calc(100%-32px)] rounded-12 bg-p1 border border-ln2 shadow-modal animate-dcPop">
         <div className="flex items-center gap-[8px] px-[14px] py-[12px] border-b border-ln">
-          <AlertTriangle size={15} className="text-warn flex-none" />
           <h2 className="flex-1 text-modaltitle font-bold text-t1">
-            Replace all annotations?
+            Choose how to apply predictions
           </h2>
           <button
             type="button"
@@ -33,14 +31,20 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
         </div>
 
         <div className="px-[14px] py-[12px] flex flex-col gap-[10px]">
-          <p className="text-row leading-[1.55] text-t2">
-            Running instance segmentation{' '}
-            <span className="font-semibold text-warn">overrides every contour</span>{' '}
-            currently on this image.
-          </p>
-          <p className="text-row leading-[1.55] text-t2">
-            This cannot be undone. Do you want to proceed?
-          </p>
+          <div className="rounded-8 border border-ln2 bg-well px-[10px] py-[8px]">
+            <p className="text-row leading-[1.55] text-t2">
+              <span className="font-semibold text-ac">Patch (recommended)</span>{' '}
+              keeps existing annotations and adds only non-overlapping predictions.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-[7px] rounded-8 border border-errLn bg-errBg px-[10px] py-[8px]">
+            <AlertTriangle size={14} className="mt-[2px] flex-none text-err" />
+            <p className="text-row leading-[1.55] text-t2">
+              <span className="font-semibold text-err">Override</span>{' '}
+              replaces all current contours with the new predictions. This cannot be undone.
+            </p>
+          </div>
         </div>
 
         <div className="flex justify-end gap-[7px] px-[14px] py-[11px] border-t border-ln">
@@ -53,10 +57,18 @@ const InstanceWarningModal = ({ isOpen, onClose, onConfirm }) => {
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            autoFocus
+            onClick={() => onConfirm('patch')}
+            className="h-7 px-[11px] rounded-7 bg-ac text-btn font-bold text-onAccent hover:brightness-110 transition-[filter]"
+          >
+            Patch and run
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm('override')}
             className="h-7 px-[11px] rounded-7 border border-errLn bg-errBg2 text-btn font-bold text-err hover:brightness-110 transition-[filter]"
           >
-            Replace and run
+            Override and run
           </button>
         </div>
       </div>

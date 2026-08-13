@@ -32,14 +32,14 @@ const getFirstModelId = (models) => {
 
 /**
  * Model lists, selections, defaults, preloading and the instance-segmentation
- * warning flow for the three annotation services.
+ * write-mode flow for the three annotation services.
  *
  * Lifted verbatim from the old Services component so the options drawer only
  * has to render. The behaviour it preserves:
  *  - fetch each model list once,
  *  - force a deterministic default selection as soon as a list arrives,
  *  - push every selection change to the backend so the model is warm,
- *  - open the instance warning modal both from its Run button and from the
+ *  - open the instance write-mode modal both from its Run button and from the
  *    `3` shortcut, which sets `instanceRunRequested` in the store.
  */
 export default function useAnnotationServices() {
@@ -132,11 +132,11 @@ export default function useAnnotationServices() {
     setInstanceWarningModalOpen(false);
   };
 
-  const confirmInstanceRun = () => {
+  const confirmInstanceRun = (writeMode = 'patch') => {
     setShowInstanceWarning(false);
     setInstanceRunRequested(false);
     setInstanceWarningModalOpen(false);
-    runInstance();
+    runInstance(writeMode);
   };
 
   const services = [
