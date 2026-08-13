@@ -19,6 +19,7 @@ import {
   Zap,
   Gauge,
   MemoryStick,
+  Database,
   Layers,
   Scale,
   Maximize,
@@ -101,8 +102,14 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
 
   const tags = (Array.isArray(model.tags) ? model.tags : []).filter((t) => {
     const key = String(t.key || "").toLowerCase();
-    return key !== "task" && key !== "tasks" && !key.startsWith("task_");
+    return key !== "task" && key !== "tasks" && !key.startsWith("task_")
+      && !["publisher", "trained_label_names", "trained_on_dataset_id", "trained_on_dataset_name", "dataset_id", "dataset_name"]
+        .includes(key);
   });
+
+  const labelNames = Array.isArray(model.predictedLabelNames) ? model.predictedLabelNames : [];
+  const predictedLabels = labelNames.filter(Boolean);
+  const trainedOnDataset = model.trainedOnDatasetName || null;
 
   const capabilities = [
     model.pretrained && { label: "Pretrained", className: "bg-okBg text-ok" },
@@ -141,7 +148,8 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
     formatResolution(model.inputResolution) ||
     promptTypes.length > 0 ||
     model.refinementSupported ||
-    (Array.isArray(model.labelIds) && model.labelIds.length > 0) ||
+    predictedLabels.length > 0 ||
+    trainedOnDataset ||
     tags.length > 0;
 
   return (
@@ -300,9 +308,10 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
                 {model.refinementSupported ? "Supported" : null}
               </SpecRow>
               <SpecRow Icon={Hash} label="Predicted labels">
-                {Array.isArray(model.labelIds) && model.labelIds.length > 0
-                  ? model.labelIds.join(", ")
-                  : null}
+                {predictedLabels.length > 0 ? predictedLabels.join(", ") : null}
+              </SpecRow>
+              <SpecRow Icon={Database} label="Trained on dataset">
+                {trainedOnDataset}
               </SpecRow>
               {tags.length > 0 && (
                 <SpecRow Icon={Sparkles} label="Tags">

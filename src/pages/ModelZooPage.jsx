@@ -44,6 +44,25 @@ const normalizeTagEntries = (tags) => {
   return [];
 };
 
+const getTagValue = (tags, key) => {
+  if (!tags) return null;
+  if (Array.isArray(tags)) {
+    const entry = tags.find((tag) => tag?.key === key);
+    return entry?.value ?? null;
+  }
+  return typeof tags === "object" ? tags[key] ?? null : null;
+};
+
+const parseTagList = (value) => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
 // Transform a merged backend model into the card's UI shape. `tasks` is the
 // array of task keys the model serves (already merged in getAllModels).
 const transformModel = (model) => ({
@@ -66,6 +85,11 @@ const transformModel = (model) => ({
     : model.label_id != null
     ? [model.label_id]
     : [],
+  predictedLabelNames: parseTagList(getTagValue(model.tags, "trained_label_names")),
+  trainedOnDatasetId: getTagValue(model.tags, "trained_on_dataset_id")
+    || getTagValue(model.tags, "dataset_id"),
+  trainedOnDatasetName: getTagValue(model.tags, "trained_on_dataset_name")
+    || getTagValue(model.tags, "dataset_name"),
   trainable: model.trainable === true,
   pretrained: model.pretrained !== false,
   architecture: model.architecture || null,
