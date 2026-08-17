@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Layers2, Trash2 } from "lucide-react";
+import { AlertTriangle, Layers2, Loader2, Trash2 } from "lucide-react";
 
 /**
  * How predictions meet the annotations that are already on the images.
@@ -31,7 +31,14 @@ const OPTIONS = [
     },
 ];
 
-export default function WriteModeSelector({ options, onChange, replacePreview }) {
+export default function WriteModeSelector({
+    options,
+    onChange,
+    replacePreview,
+    replacePreviewError,
+    isPreviewingReplace,
+    onRetryReplacePreview,
+}) {
     const isReplace = options.write_mode === "replace";
 
     return (
@@ -88,8 +95,28 @@ export default function WriteModeSelector({ options, onChange, replacePreview })
                                 </>
                             )}
                         </p>
+                    ) : replacePreviewError ? (
+                        <div className="space-y-1" role="alert">
+                            <p className="text-xs text-err">
+                                Could not count what would be deleted: {replacePreviewError}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={onRetryReplacePreview}
+                                className="text-xs font-medium text-ac hover:underline"
+                            >
+                                Try again
+                            </button>
+                        </div>
                     ) : (
-                        <p className="text-xs text-err">Counting what would be deleted…</p>
+                        <p className="text-xs text-err flex items-center gap-1">
+                            {isPreviewingReplace && (
+                                <Loader2 size={12} className="animate-spin" />
+                            )}
+                            {isPreviewingReplace
+                                ? "Counting what would be deleted…"
+                                : "The deletion preview is unavailable."}
+                        </p>
                     )}
                     <label className="flex items-center gap-2 text-xs text-t1">
                         <input

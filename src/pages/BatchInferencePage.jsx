@@ -119,6 +119,9 @@ export default function BatchInferencePage() {
     const [activeJobId, setActiveJobId] = useState(null);
 
     const [replacePreview, setReplacePreview] = useState(null);
+    const [replacePreviewError, setReplacePreviewError] = useState(null);
+    const [isPreviewingReplace, setIsPreviewingReplace] = useState(false);
+    const [replacePreviewAttempt, setReplacePreviewAttempt] = useState(0);
     const [showReplaceWarning, setShowReplaceWarning] = useState(false);
     const [isStarting, setIsStarting] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
@@ -213,20 +216,43 @@ export default function BatchInferencePage() {
     useEffect(() => {
         if (options.write_mode !== "replace" || steps.length === 0) {
             setReplacePreview(null);
+            setReplacePreviewError(null);
+            setIsPreviewingReplace(false);
             return undefined;
         }
         let cancelled = false;
+        setReplacePreview(null);
+        setReplacePreviewError(null);
+        setIsPreviewingReplace(true);
         previewInferenceReplace(requestBody())
             .then((preview) => {
-                if (!cancelled) setReplacePreview(preview);
+                if (!cancelled) {
+                    setReplacePreview(preview);
+                    setReplacePreviewError(null);
+                }
             })
-            .catch(() => {
-                if (!cancelled) setReplacePreview(null);
+            .catch((e) => {
+                if (!cancelled) {
+                    setReplacePreview(null);
+                    setReplacePreviewError(
+                        e.message || "Could not calculate the deletion preview."
+                    );
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setIsPreviewingReplace(false);
             });
         return () => {
             cancelled = true;
         };
-    }, [options.write_mode, options.preserve_reviewed, imageSelection, steps.length, requestBody]);
+    }, [
+        options.write_mode,
+        options.preserve_reviewed,
+        imageSelection,
+        steps.length,
+        replacePreviewAttempt,
+        requestBody,
+    ]);
 
     const setStep = (labelId, step) =>
         setStepsByLabel((current) => ({ ...current, [labelId]: step }));
@@ -249,6 +275,7 @@ export default function BatchInferencePage() {
     };
 
     const handleStart = () => {
+        setError(null);
         if (options.write_mode === "replace") {
             setShowReplaceWarning(true);
             return;
@@ -426,6 +453,11 @@ export default function BatchInferencePage() {
                                         options={options}
                                         onChange={setOptions}
                                         replacePreview={replacePreview}
+                                        replacePreviewError={replacePreviewError}
+                                        isPreviewingReplace={isPreviewingReplace}
+                                        onRetryReplacePreview={() =>
+                                            setReplacePreviewAttempt((attempt) => attempt + 1)
+                                        }
                                     />
                                 </section>
 
@@ -526,10 +558,17 @@ export default function BatchInferencePage() {
             <ReplaceWarningModal
                 isOpen={showReplaceWarning}
                 preview={replacePreview}
+                previewError={replacePreviewError}
                 preserveReviewed={options.preserve_reviewed}
                 imageCount={scopeCount}
+                isPreviewing={isPreviewingReplace}
                 isStarting={isStarting}
-                onCancel={() => setShowReplaceWarning(false)}
+                error={showReplaceWarning ? error : null}
+                onCancel={() => {
+                    setShowReplaceWarning(false);
+                    setError(null);
+                }}
+                onRetryPreview={() => setReplacePreviewAttempt((attempt) => attempt + 1)}
                 onConfirm={() => start(true)}
             />
         </DatasetManagementLayout>
