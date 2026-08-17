@@ -1,5 +1,12 @@
 import React from "react";
 import { ChevronRight, Cpu, Sparkles, Star, Layers } from "lucide-react";
+import DynamicHyperParameter from "../datasets/training/DynamicHyperParameter";
+import {
+    getEffectiveContract,
+    initStep,
+    updateStepConditioning,
+    updateStepParameter,
+} from "./plannerContractUtils";
 
 /**
  * The orchestration editor: the dataset's label hierarchy, with a model bound to each label.
@@ -52,7 +59,7 @@ export const groupLabelsByLevel = (labelsById) => {
 /** Models that may be bound to a label: class-agnostic ones, plus those predicting it. */
 export const modelsForLabel = (models, labelId) =>
     (models || []).filter(
-        (model) => model.label_ids.length === 0 || model.label_ids.includes(labelId)
+        (model) => !model.label_ids || model.label_ids.length === 0 || model.label_ids.includes(labelId)
     );
 
 function ModelRow({ label, step, models, strategies, onChange }) {
@@ -60,27 +67,36 @@ function ModelRow({ label, step, models, strategies, onChange }) {
     const selected = models.find(
         (model) => step && model.registry_key === step.model_registry_key && model.task === step.task
     );
-    const isCrossImage = selected?.task === "cross-image-suggestion";
+    const contract = selected ? getEffectiveContract(selected) : null;
+    const condSpec = contract?.conditioning;
 
     const setModel = (value) => {
         if (value === SKIP) return onChange(label.id, null);
         const [task, registryKey] = value.split("::");
-        onChange(label.id, {
-            label_id: label.id,
-            model_registry_key: registryKey,
-            task,
-            min_confidence: step?.min_confidence ?? 0,
-            // A cross-image step needs a strategy; preselect the first available one so the
-            // common case never requires opening the advanced row.
-            retrieval_strategy:
-                task === "cross-image-suggestion"
-                    ? step?.retrieval_strategy ||
-                      strategies.find((s) => s.available)?.key ||
-                      null
-                    : null,
-            top_k: step?.top_k ?? 5,
-        });
+        const found = models.find((m) => m.task === task && m.registry_key === registryKey);
+        if (!found) return onChange(label.id, null);
+        const newStep = initStep(label, found, strategies);
+        onChange(label.id, newStep);
     };
+
+    const handleParamChange = (key, val) => {
+        const nextStep = updateStepParameter(step, key, val);
+        onChange(label.id, nextStep);
+    };
+
+    const handleCondChange = (key, val) => {
+        const nextStep = updateStepConditioning(step, key, val);
+        onChange(label.id, nextStep);
+    };
+
+    const countUnitLabel =
+        condSpec?.unit === "image"
+            ? "Images"
+            : condSpec?.unit === "instance"
+            ? "Instances"
+            : condSpec?.unit === "vector"
+            ? "Vectors"
+            : "Count";
 
     return (
         <div className="border border-ln rounded-xl bg-p1 overflow-hidden">
@@ -118,86 +134,103 @@ function ModelRow({ label, step, models, strategies, onChange }) {
                 </select>
             </div>
 
-            {step && selected && (
+            {step && selected && contract && (
                 <div className="px-3 pb-2.5 pt-0 flex flex-wrap items-center gap-x-4 gap-y-2">
                     {selected.trained_on_dataset && (
                         <span className="inline-flex items-center gap-1 text-[11px] text-ok">
                             <Star size={11} /> trained on this dataset
                         </span>
                     )}
-                    {selected.label_ids.length > 1 && (
+                    {selected.label_ids?.length > 1 && (
                         <span className="text-[11px] text-t3">
                             Predicts {selected.label_ids.length} classes — output filtered to “{label.name}”.
                         </span>
                     )}
-                    {selected.label_ids.length === 0 && (
+                    {(!selected.label_ids || selected.label_ids.length === 0) && (
                         <span className="text-[11px] text-t3">
                             Class-agnostic — everything it finds is labelled “{label.name}”.
                         </span>
                     )}
 
-                    <label className="inline-flex items-center gap-1.5 text-[11px] text-t2">
-                        Min. confidence
-                        <input
-                            type="number"
-                            min={0}
-                            max={1}
-                            step={0.05}
-                            value={step.min_confidence ?? 0}
-                            onChange={(event) =>
-                                onChange(label.id, {
-                                    ...step,
-                                    min_confidence: Number(event.target.value),
-                                })
-                            }
-                            className="w-16 px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
-                        />
-                    </label>
+                    {/* Conditioning: Concept text */}
+                    {condSpec?.kind === "concept_text" && (
+                        <label
+                            htmlFor={`label-${label.id}-concept-text`}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-t2"
+                        >
+                            Prompt
+                            <input
+                                id={`label-${label.id}-concept-text`}
+                                type="text"
+                                value={step.inputs?.conditioning?.concept_text ?? label.name}
+                                onChange={(e) => handleCondChange("concept_text", e.target.value)}
+                                className="px-2 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
+                                aria-label={`Prompt for ${label.name}`}
+                            />
+                        </label>
+                    )}
 
-                    {isCrossImage && (
-                        <>
-                            <label className="inline-flex items-center gap-1.5 text-[11px] text-t2">
-                                Exemplars
-                                {/* Only runnable strategies are listed. The backend marks a
-                                    strategy unavailable when this dataset lacks the
-                                    embeddings it ranks by, and offering one anyway just
-                                    means the user picks it and every image fails. */}
-                                <select
-                                    value={step.retrieval_strategy || ""}
-                                    onChange={(event) =>
-                                        onChange(label.id, {
-                                            ...step,
-                                            retrieval_strategy: event.target.value,
-                                        })
-                                    }
-                                    className="px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
-                                >
-                                    {strategies
-                                        .filter((strategy) => strategy.available)
-                                        .map((strategy) => (
-                                            <option key={strategy.key} value={strategy.key}>
-                                                {strategy.label || strategy.key}
-                                            </option>
-                                        ))}
-                                </select>
-                            </label>
-                            <label className="inline-flex items-center gap-1.5 text-[11px] text-t2">
-                                Top-k
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={32}
-                                    value={step.top_k ?? 5}
-                                    onChange={(event) =>
-                                        onChange(label.id, {
-                                            ...step,
-                                            top_k: Number(event.target.value),
-                                        })
-                                    }
-                                    className="w-14 px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
-                                />
-                            </label>
-                        </>
+                    {/* Conditioning: Strategy for reference images */}
+                    {condSpec?.kind === "reference_images" && (
+                        <label
+                            htmlFor={`label-${label.id}-strategy`}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-t2"
+                        >
+                            Exemplars
+                            <select
+                                id={`label-${label.id}-strategy`}
+                                value={step.inputs?.conditioning?.strategy || step.retrieval_strategy || ""}
+                                onChange={(event) => handleCondChange("strategy", event.target.value)}
+                                className="px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
+                                aria-label={`Retrieval strategy for ${label.name}`}
+                            >
+                                {strategies
+                                    .filter((strategy) => strategy.available)
+                                    .map((strategy) => (
+                                        <option key={strategy.key} value={strategy.key}>
+                                            {strategy.label || strategy.key}
+                                        </option>
+                                    ))}
+                            </select>
+                        </label>
+                    )}
+
+                    {/* Conditioning: Count when user selectable */}
+                    {condSpec?.user_selectable_count && (
+                        <label
+                            htmlFor={`label-${label.id}-count`}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-t2"
+                        >
+                            {countUnitLabel}
+                            <input
+                                id={`label-${label.id}-count`}
+                                type="number"
+                                min={condSpec.min_units ?? 1}
+                                max={condSpec.max_units ?? undefined}
+                                value={step.inputs?.conditioning?.count ?? step.top_k ?? condSpec.min_units ?? 1}
+                                onChange={(event) => handleCondChange("count", Number(event.target.value))}
+                                className="w-14 px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
+                                aria-label={`${countUnitLabel} for ${label.name}`}
+                            />
+                        </label>
+                    )}
+
+                    {/* Generic parameters declared by model contract */}
+                    {contract.parameters &&
+                        contract.parameters.map((param) => (
+                            <DynamicHyperParameter
+                                key={param.key}
+                                param={param}
+                                value={step.inputs?.parameters?.[param.key]}
+                                onChange={handleParamChange}
+                                compact
+                                idPrefix={`label-${label.id}`}
+                            />
+                        ))}
+
+                    {/* Optional Contract notes */}
+                    {contract.notes && (
+                        <p className="text-[11px] text-t3 w-full mt-0.5">{contract.notes}</p>
                     )}
                 </div>
             )}
@@ -253,11 +286,16 @@ export default function LabelModelPlanner({ labelsById, models, strategies, step
                 whichever label it is bound to, so mixing specialists and multiclass models in
                 one run is fine.
             </p>
-            {models.some((model) => model.task === "cross-image-suggestion") && (
+            {models.some(
+                (model) =>
+                    model.task === "cross-image-suggestion" ||
+                    model.input_contract?.conditioning?.kind === "reference_images" ||
+                    model.input_contract?.conditioning?.kind === "instances"
+            ) && (
                 <p className="flex items-start gap-2 text-[11px] text-t3">
                     <Sparkles size={13} className="shrink-0 mt-0.5" />
                     In-context models annotate by example: they pull exemplars of the label from
-                    other images in the dataset instead of relying on trained weights.
+                    other images in the dataset instead of relying solely on fixed weights.
                 </p>
             )}
         </div>

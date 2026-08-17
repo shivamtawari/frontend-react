@@ -1,0 +1,389 @@
+import React from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import LabelModelPlanner, { groupLabelsByLevel, modelsForLabel } from "./LabelModelPlanner";
+
+describe("LabelModelPlanner", () => {
+  const labelsById = {
+    1: { id: 1, name: "cell", parent_id: null },
+    2: { id: 2, name: "nucleus", parent_id: 1 },
+  };
+
+  const strategies = [
+    { key: "global_scene", label: "Global Scene", available: true },
+    { key: "region_mean", label: "Region Mean", available: true },
+  ];
+
+  const sam3Model = {
+    registry_key: "sam3-incontext",
+    name: "SAM 3 (In-context)",
+    task: "cross-image-suggestion",
+    label_ids: [],
+    input_contract: {
+      schema_version: 1,
+      task: "cross-image-suggestion",
+      conditioning: {
+        kind: "reference_images",
+        unit: "image",
+        min_units: 1,
+        max_units: 1,
+        requires_complete_annotation: true,
+        user_selectable_count: false,
+      },
+      parameters: [
+        {
+          key: "threshold",
+          label: "Detection sensitivity",
+          type: "float",
+          default_value: 0.3,
+          min_value: 0.0,
+          max_value: 1.0,
+          step: 0.05,
+        },
+        {
+          key: "mask_threshold",
+          label: "Mask threshold",
+          type: "float",
+          default_value: 0.5,
+          min_value: 0.0,
+          max_value: 1.0,
+          step: 0.05,
+        },
+        {
+          key: "min_target_frac",
+          label: "Target overlap",
+          type: "float",
+          default_value: 0.5,
+          min_value: 0.0,
+          max_value: 1.0,
+          step: 0.05,
+        },
+      ],
+      notes: "SAM 3 uses 1 full reference image and prompts iteratively.",
+    },
+  };
+
+  const mask2formerModel = {
+    registry_key: "mask2former-model",
+    name: "Mask2Former",
+    task: "instance-segmentation",
+    label_ids: [1, 2],
+    input_contract: {
+      schema_version: 1,
+      task: "instance-segmentation",
+      conditioning: {
+        kind: "none",
+        unit: null,
+        min_units: 0,
+        max_units: null,
+        user_selectable_count: false,
+      },
+      parameters: [
+        {
+          key: "threshold",
+          label: "Score Threshold",
+          type: "float",
+          default_value: 0.5,
+          min_value: 0.0,
+          max_value: 1.0,
+          step: 0.05,
+        },
+      ],
+    },
+  };
+
+  const textModel = {
+    registry_key: "clip-seg-model",
+    name: "CLIP-Seg Prompted",
+    task: "instance-segmentation",
+    label_ids: [],
+    input_contract: {
+      schema_version: 1,
+      task: "instance-segmentation",
+      conditioning: {
+        kind: "concept_text",
+        unit: null,
+        min_units: 0,
+        max_units: null,
+        user_selectable_count: false,
+      },
+      parameters: [
+        {
+          key: "threshold",
+          label: "Score Threshold",
+          type: "float",
+          default_value: 0.3,
+          min_value: 0.0,
+          max_value: 1.0,
+          step: 0.05,
+        },
+      ],
+    },
+  };
+
+  const models = [sam3Model, mask2formerModel, textModel];
+
+  it("groups labels by hierarchy depth correctly", () => {
+    const levels = groupLabelsByLevel(labelsById);
+    expect(levels).toHaveLength(2);
+    expect(levels[0].level).toBe(0);
+    expect(levels[0].labels[0].name).toBe("cell");
+    expect(levels[1].level).toBe(1);
+    expect(levels[1].labels[0].name).toBe("nucleus");
+    expect(levels[1].labels[0].parentName).toBe("cell");
+  });
+
+  it("filters models applicable to a label", () => {
+    expect(modelsForLabel(models, 1)).toHaveLength(3);
+    const specialist = {
+      registry_key: "cell-only",
+      task: "instance-segmentation",
+      label_ids: [1],
+    };
+    expect(modelsForLabel([specialist], 2)).toHaveLength(0);
+    expect(modelsForLabel([specialist], 1)).toHaveLength(1);
+  });
+
+  it("renders SAM 3 with strategy selector, declared parameters, notes, and NO count control", () => {
+    const onChange = jest.fn();
+    const step = {
+      label_id: 1,
+      model_registry_key: "sam3-incontext",
+      task: "cross-image-suggestion",
+      inputs: {
+        conditioning: { count: 1, strategy: "global_scene" },
+        parameters: { threshold: 0.3, mask_threshold: 0.5, min_target_frac: 0.5 },
+      },
+      min_confidence: 0.3,
+      retrieval_strategy: "global_scene",
+      top_k: 1,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={models}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    // Strategy selector is present
+    expect(screen.getByRole("combobox", { name: /retrieval strategy for cell/i })).toBeInTheDocument();
+
+    // Count input is NOT rendered because user_selectable_count is false
+    expect(screen.queryByRole("spinbutton", { name: /images for cell/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: /top-k/i })).not.toBeInTheDocument();
+
+    // Notes are rendered
+    expect(screen.getByText(/SAM 3 uses 1 full reference image/i)).toBeInTheDocument();
+
+    // All 3 declared parameters are rendered with scoped IDs
+    const thresholdSlider = screen.getByRole("slider", { name: /detection sensitivity/i });
+    expect(thresholdSlider).toBeInTheDocument();
+    expect(thresholdSlider.id).toBe("label-1-param-threshold");
+    expect(screen.getByRole("slider", { name: /mask threshold/i }).id).toBe("label-1-param-mask_threshold");
+    expect(screen.getByRole("slider", { name: /target overlap/i }).id).toBe("label-1-param-min_target_frac");
+  });
+
+  it("renders unbounded count input without arbitrary max ceiling", () => {
+    const unboundedModel = {
+      registry_key: "unbounded-instances",
+      name: "Unbounded Instances Model",
+      task: "cross-image-suggestion",
+      label_ids: [],
+      input_contract: {
+        schema_version: 1,
+        task: "cross-image-suggestion",
+        conditioning: {
+          kind: "instances",
+          unit: "instance",
+          min_units: 1,
+          max_units: null,
+          user_selectable_count: true,
+        },
+        parameters: [],
+      },
+    };
+
+    const step = {
+      label_id: 1,
+      model_registry_key: "unbounded-instances",
+      task: "cross-image-suggestion",
+      inputs: {
+        conditioning: { count: 5 },
+        parameters: {},
+      },
+      top_k: 5,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={[unboundedModel]}
+        strategies={strategies}
+        steps={[step]}
+        onChange={jest.fn()}
+      />
+    );
+
+    const countInput = screen.getByRole("spinbutton", { name: /instances for cell/i });
+    expect(countInput).toBeInTheDocument();
+    expect(countInput.id).toBe("label-1-count");
+    expect(countInput).not.toHaveAttribute("max");
+  });
+
+  it("renders Mask2Former with threshold and without exemplar controls", () => {
+    const onChange = jest.fn();
+    const step = {
+      label_id: 1,
+      model_registry_key: "mask2former-model",
+      task: "instance-segmentation",
+      inputs: {
+        conditioning: {},
+        parameters: { threshold: 0.5 },
+      },
+      min_confidence: 0.5,
+      retrieval_strategy: null,
+      top_k: 5,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={models}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    // No exemplar/strategy selector
+    expect(screen.queryByRole("combobox", { name: /retrieval strategy/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: /images/i })).not.toBeInTheDocument();
+
+    // Threshold parameter is rendered
+    expect(screen.getByRole("slider", { name: /score threshold/i })).toBeInTheDocument();
+  });
+
+  it("renders concept_text prompt input for text-conditioned models", () => {
+    const onChange = jest.fn();
+    const step = {
+      label_id: 1,
+      model_registry_key: "clip-seg-model",
+      task: "instance-segmentation",
+      inputs: {
+        conditioning: { concept_text: "cell" },
+        parameters: { threshold: 0.3 },
+      },
+      min_confidence: 0.3,
+      retrieval_strategy: null,
+      top_k: 5,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={models}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    // Text prompt input is rendered
+    const textInput = screen.getByRole("textbox", { name: /prompt for cell/i });
+    expect(textInput).toBeInTheDocument();
+    expect(textInput.value).toBe("cell");
+
+    fireEvent.change(textInput, { target: { value: "fluorescent cell membrane" } });
+    expect(onChange).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        inputs: expect.objectContaining({
+          conditioning: expect.objectContaining({
+            concept_text: "fluorescent cell membrane",
+          }),
+        }),
+      })
+    );
+  });
+
+  it("initializes defaults and clears stale inputs when selecting a model", () => {
+    const onChange = jest.fn();
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={models}
+        strategies={strategies}
+        steps={[]}
+        onChange={onChange}
+      />
+    );
+
+    const modelSelect = screen.getByRole("combobox", { name: /model for cell/i });
+    fireEvent.change(modelSelect, { target: { value: "cross-image-suggestion::sam3-incontext" } });
+
+    expect(onChange).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        label_id: 1,
+        model_registry_key: "sam3-incontext",
+        task: "cross-image-suggestion",
+        inputs: {
+          conditioning: {
+            count: 1,
+            strategy: "global_scene",
+          },
+          parameters: {
+            threshold: 0.3,
+            mask_threshold: 0.5,
+            min_target_frac: 0.5,
+          },
+        },
+      })
+    );
+  });
+
+  it("handles parameter changes dynamically", () => {
+    const onChange = jest.fn();
+    const step = {
+      label_id: 1,
+      model_registry_key: "sam3-incontext",
+      task: "cross-image-suggestion",
+      inputs: {
+        conditioning: { count: 1, strategy: "global_scene" },
+        parameters: { threshold: 0.3, mask_threshold: 0.5, min_target_frac: 0.5 },
+      },
+      min_confidence: 0.3,
+      retrieval_strategy: "global_scene",
+      top_k: 1,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={models}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    const slider = screen.getByRole("slider", { name: /detection sensitivity/i });
+    fireEvent.change(slider, { target: { value: "0.85" } });
+
+    expect(onChange).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        inputs: expect.objectContaining({
+          parameters: expect.objectContaining({
+            threshold: 0.85,
+          }),
+        }),
+        min_confidence: 0.85,
+      })
+    );
+  });
+});
