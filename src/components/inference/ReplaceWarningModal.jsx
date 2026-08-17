@@ -16,10 +16,14 @@ const CONFIRM_WORD = "REPLACE";
 export default function ReplaceWarningModal({
     isOpen,
     preview,
+    previewError,
     preserveReviewed,
     imageCount,
+    isPreviewing,
     isStarting,
+    error,
     onCancel,
+    onRetryPreview,
     onConfirm,
 }) {
     const [typed, setTyped] = useState("");
@@ -99,10 +103,39 @@ export default function ReplaceWarningModal({
                                 </>
                             )}
                         </dl>
+                    ) : previewError ? (
+                        <div className="space-y-2" role="alert">
+                            <p className="text-sm text-err">
+                                Could not count the annotations that would be deleted.
+                            </p>
+                            <p className="text-xs text-t2">{previewError}</p>
+                            <button
+                                type="button"
+                                onClick={onRetryPreview}
+                                className="text-xs font-medium text-ac hover:underline"
+                            >
+                                Try again
+                            </button>
+                        </div>
                     ) : (
                         <p className="flex items-center gap-2 text-sm text-t3">
-                            <Loader2 className="w-4 h-4 animate-spin" /> Counting what would be
-                            deleted…
+                            {isPreviewing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Counting what would
+                                    be deleted…
+                                </>
+                            ) : (
+                                "The deletion preview is unavailable."
+                            )}
+                        </p>
+                    )}
+
+                    {error && (
+                        <p
+                            className="p-2 rounded-lg border border-errLn bg-errBg text-sm text-err"
+                            role="alert"
+                        >
+                            {error}
                         </p>
                     )}
 
@@ -142,7 +175,13 @@ export default function ReplaceWarningModal({
                     </button>
                     <button
                         onClick={onConfirm}
-                        disabled={!confirmed || isStarting}
+                        disabled={
+                            !confirmed ||
+                            isPreviewing ||
+                            !preview ||
+                            Boolean(previewError) ||
+                            isStarting
+                        }
                         className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-onAccent bg-err rounded-lg hover:brightness-110 disabled:opacity-50"
                     >
                         {isStarting ? (
