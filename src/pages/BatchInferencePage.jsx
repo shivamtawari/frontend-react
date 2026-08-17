@@ -46,6 +46,20 @@ const SCOPE_OPTIONS = [
 
 const RUN_NAME_PATTERN = /^[\p{L}\p{N}_\-\s]{1,80}$/u;
 
+const LEGACY_STEP_KEYS = new Set(["min_confidence", "retrieval_strategy", "top_k"]);
+
+// Compatibility fields remain in local planner state for old persisted plans, but canonical
+// requests must not send mirrored legacy values. The backend validates every present field even
+// when `inputs` is supplied, so a stale legacy value can reject an otherwise valid step.
+const stepsForRequest = (steps) =>
+    steps.map((step) =>
+        step.inputs
+            ? Object.fromEntries(
+                  Object.entries(step).filter(([key]) => !LEGACY_STEP_KEYS.has(key))
+              )
+            : step
+    );
+
 const formatTime = (value) => (value ? new Date(value).toLocaleString() : "—");
 
 function JobCard({ job, selected, onClick }) {
@@ -122,7 +136,7 @@ export default function BatchInferencePage() {
         (confirmReplace = false) => ({
             dataset_id: Number(datasetId),
             name: runName.trim() || undefined,
-            steps,
+            steps: stepsForRequest(steps),
             image_selection: imageSelection,
             options,
             confirm_replace: confirmReplace,
