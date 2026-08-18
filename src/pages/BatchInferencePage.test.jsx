@@ -1,5 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { vi } from "vitest";
 import BatchInferencePage from "./BatchInferencePage";
 import {
     fetchLabels,
@@ -11,30 +12,34 @@ import {
     streamInferenceJob,
 } from "../api";
 
-const mockNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  useParams: () => ({ datasetId: "99" }),
-  useNavigate: () => mockNavigate,
-}), { virtual: true });
+const { mockRoute } = vi.hoisted(() => ({
+  mockRoute: { datasetId: "99" },
+}));
 
-jest.mock("../contexts/DatasetContext", () => ({
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", () => ({
+  useParams: () => ({ datasetId: mockRoute.datasetId }),
+  useNavigate: () => mockNavigate,
+}));
+
+vi.mock("../contexts/DatasetContext", () => ({
   useDataset: () => ({ currentDataset: { id: 99, name: "Test Dataset" } }),
 }));
 
-jest.mock("../components/datasets/gallery/DatasetManagementLayout", () => ({ children }) => (
-  <div>{children}</div>
-));
+vi.mock("../components/datasets/gallery/DatasetManagementLayout", () => ({
+  default: ({ children }) => <div>{children}</div>,
+}));
 
-jest.mock("../api", () => ({
-  cancelInferenceJob: jest.fn(),
-  deleteInferenceJob: jest.fn(),
-  fetchLabels: jest.fn(),
-  getInferenceJobs: jest.fn(),
-  getInferenceModelCatalog: jest.fn(),
-  getInferenceScopeCounts: jest.fn(),
-  previewInferenceReplace: jest.fn(),
-  startInferenceJob: jest.fn(),
-  streamInferenceJob: jest.fn(),
+vi.mock("../api", () => ({
+  cancelInferenceJob: vi.fn(),
+  deleteInferenceJob: vi.fn(),
+  fetchLabels: vi.fn(),
+  getInferenceJobs: vi.fn(),
+  getInferenceModelCatalog: vi.fn(),
+  getInferenceScopeCounts: vi.fn(),
+  previewInferenceReplace: vi.fn(),
+  startInferenceJob: vi.fn(),
+  streamInferenceJob: vi.fn(),
 }));
 
 const REPLACE_MODEL_CATALOG = {
@@ -70,7 +75,7 @@ const REPLACE_MODEL_CATALOG = {
 
 describe("BatchInferencePage Contract Submission", () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
         fetchLabels.mockResolvedValue({
             labels: {
                 id_to_label_object: {
@@ -84,7 +89,7 @@ describe("BatchInferencePage Contract Submission", () => {
             unreviewed: 8,
         });
         getInferenceJobs.mockResolvedValue([]);
-        streamInferenceJob.mockReturnValue({ abort: jest.fn() });
+        streamInferenceJob.mockReturnValue({ abort: vi.fn() });
         startInferenceJob.mockResolvedValue({
             id: 101,
             status: "pending",
