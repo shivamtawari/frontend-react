@@ -73,6 +73,28 @@ const REPLACE_MODEL_CATALOG = {
     retrieval_strategies: [],
 };
 
+const LEGACY_MODEL_CATALOG = {
+    models: [
+        {
+            registry_key: "legacy-mask2former",
+            name: "Legacy Mask2Former",
+            task: "instance-segmentation",
+            provenance: "legacy_default",
+            label_ids: [],
+            input_contract: {
+                schema_version: 1,
+                task: "instance-segmentation",
+                conditioning: {
+                    kind: "none",
+                    user_selectable_count: false,
+                },
+                parameters: [],
+            },
+        },
+    ],
+    retrieval_strategies: [],
+};
+
 describe("BatchInferencePage Contract Submission", () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -178,6 +200,7 @@ describe("BatchInferencePage Contract Submission", () => {
         // Change parameter threshold
         const thresholdSlider = screen.getByRole("slider", { name: /detection sensitivity/i });
         fireEvent.change(thresholdSlider, { target: { value: "0.75" } });
+        expect(screen.queryByRole("spinbutton", { name: /min\. confidence for cell/i })).not.toBeInTheDocument();
 
         // Click Start Inference button
         const startButton = screen.getByRole("button", { name: /start inference/i });
@@ -210,7 +233,46 @@ describe("BatchInferencePage Contract Submission", () => {
                 },
             ],
         });
-        expect(submittedPayload.steps[0]).not.toHaveProperty("min_confidence");
+        expect(submittedPayload.steps[0]).toHaveProperty("min_confidence", 0.75);
+        expect(submittedPayload.steps[0]).not.toHaveProperty("retrieval_strategy");
+        expect(submittedPayload.steps[0]).not.toHaveProperty("top_k");
+        expect(submittedPayload.steps[0].inputs.parameters).not.toHaveProperty("min_confidence");
+    });
+
+    it("renders and submits gateway confidence for a legacy fallback model", async () => {
+        getInferenceModelCatalog.mockResolvedValue(LEGACY_MODEL_CATALOG);
+        render(<BatchInferencePage />);
+
+        const modelSelect = await screen.findByRole("combobox", { name: /model for cell/i });
+        fireEvent.change(modelSelect, {
+            target: { value: "instance-segmentation::legacy-mask2former" },
+        });
+
+        const confidenceInput = await screen.findByRole("spinbutton", {
+            name: /min\. confidence for cell/i,
+        });
+        fireEvent.change(confidenceInput, { target: { value: "0.65" } });
+
+        const startButton = await screen.findByRole("button", { name: /start inference/i });
+        expect(startButton).not.toBeDisabled();
+        fireEvent.click(startButton);
+
+        await waitFor(() => expect(startInferenceJob).toHaveBeenCalledTimes(1));
+
+        const submittedPayload = startInferenceJob.mock.calls[0][0];
+        expect(submittedPayload.steps).toEqual([
+            expect.objectContaining({
+                label_id: 1,
+                model_registry_key: "legacy-mask2former",
+                task: "instance-segmentation",
+                min_confidence: 0.65,
+                inputs: {
+                    conditioning: {},
+                    parameters: {},
+                },
+            }),
+        ]);
+        expect(submittedPayload.steps[0].inputs.parameters).not.toHaveProperty("min_confidence");
         expect(submittedPayload.steps[0]).not.toHaveProperty("retrieval_strategy");
         expect(submittedPayload.steps[0]).not.toHaveProperty("top_k");
     });

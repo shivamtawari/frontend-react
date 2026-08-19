@@ -67,8 +67,13 @@ function ModelRow({ label, step, models, strategies, onChange }) {
     const selected = models.find(
         (model) => step && model.registry_key === step.model_registry_key && model.task === step.task
     );
+    const isLegacyFallback = selected?.provenance === "legacy_default";
     const contract = selected ? getEffectiveContract(selected) : null;
     const condSpec = contract?.conditioning;
+    const usesRetrievalStrategy =
+        condSpec?.kind === "reference_images" ||
+        (condSpec?.kind === "instances" &&
+            (step?.inputs?.conditioning?.strategy != null || step?.retrieval_strategy != null));
 
     const setModel = (value) => {
         if (value === SKIP) return onChange(label.id, null);
@@ -155,6 +160,32 @@ function ModelRow({ label, step, models, strategies, onChange }) {
                         ) : null}
                     </div>
 
+                    {/* Legacy models keep this gateway-side post-filter outside the model contract. */}
+                    {isLegacyFallback && (
+                        <label
+                            htmlFor={`label-${label.id}-min-confidence`}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-t2"
+                        >
+                            Min. confidence
+                            <input
+                                id={`label-${label.id}-min-confidence`}
+                                type="number"
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                value={step.min_confidence ?? 0}
+                                onChange={(event) =>
+                                    onChange(label.id, {
+                                        ...step,
+                                        min_confidence: Number(event.target.value),
+                                    })
+                                }
+                                className="w-16 px-1.5 py-0.5 text-[11px] border border-ln rounded bg-well text-t1"
+                                aria-label={`Min. confidence for ${label.name}`}
+                            />
+                        </label>
+                    )}
+
                     {/* Dedicated Conditioning Section (when kind !== 'none') */}
                     {condSpec && condSpec.kind !== "none" && (
                         <div className="p-2.5 rounded-lg bg-well/60 border border-ln/60 space-y-2">
@@ -164,8 +195,8 @@ function ModelRow({ label, step, models, strategies, onChange }) {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                                {/* Strategy for reference images */}
-                                {condSpec.kind === "reference_images" && (
+                                {/* Strategy for retrieval-backed conditioning */}
+                                {usesRetrievalStrategy && (
                                     <label
                                         htmlFor={`label-${label.id}-strategy`}
                                         className="inline-flex items-center gap-1.5 text-xs text-t2"

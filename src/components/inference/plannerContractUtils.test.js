@@ -79,6 +79,20 @@ describe("plannerContractUtils", () => {
     });
   });
 
+  it("initializes the legacy cross-image fallback with a retrieval strategy", () => {
+    const step = initStep(
+      { id: 11, name: "cell" },
+      { registry_key: "legacy-cross", task: "cross-image-suggestion" },
+      sampleStrategies
+    );
+
+    expect(step.inputs.conditioning).toEqual({
+      count: 5,
+      strategy: "global_scene",
+    });
+    expect(step.retrieval_strategy).toBe("global_scene");
+  });
+
   it("builds conditioning for user-selectable count clamped to bounds", () => {
     const contract = {
       conditioning: {
@@ -134,6 +148,23 @@ describe("plannerContractUtils", () => {
       retrieval_strategy: "global_scene",
       top_k: 1,
     });
+  });
+
+  it("keeps legacy fallback confidence outside the declared parameter map", () => {
+    const step = initStep(
+      { id: 7, name: "cell" },
+      {
+        registry_key: "legacy-m2f",
+        task: "instance-segmentation",
+        provenance: "legacy_default",
+        input_contract: LEGACY_TASK_DEFAULTS["instance-segmentation"],
+      },
+      sampleStrategies
+    );
+
+    expect(step.min_confidence).toBe(0);
+    expect(step.inputs.parameters).toEqual({});
+    expect(step.inputs.parameters).not.toHaveProperty("min_confidence");
   });
 
   it("updates parameters and syncs legacy min_confidence", () => {

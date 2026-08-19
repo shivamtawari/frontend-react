@@ -46,11 +46,11 @@ const SCOPE_OPTIONS = [
 
 const RUN_NAME_PATTERN = /^[\p{L}\p{N}_\-\s]{1,80}$/u;
 
-const LEGACY_STEP_KEYS = new Set(["min_confidence", "retrieval_strategy", "top_k"]);
+const LEGACY_STEP_KEYS = new Set(["retrieval_strategy", "top_k"]);
 
-// Compatibility fields remain in local planner state for old persisted plans, but canonical
-// requests must not send mirrored legacy values. The backend validates every present field even
-// when `inputs` is supplied, so a stale legacy value can reject an otherwise valid step.
+// Retrieval fields remain local mirrors for old persisted plans, but canonical requests carry
+// conditioning through inputs. min_confidence is different: it is a gateway-owned post-filter
+// and remains valid alongside canonical model inputs.
 const stepsForRequest = (steps) =>
     steps.map((step) =>
         step.inputs

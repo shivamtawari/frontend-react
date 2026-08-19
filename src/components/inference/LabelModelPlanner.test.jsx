@@ -17,6 +17,7 @@ describe("LabelModelPlanner", () => {
     registry_key: "sam3-incontext",
     name: "SAM 3 (In-context)",
     task: "cross-image-suggestion",
+    provenance: "declared",
     label_ids: [],
     input_contract: {
       schema_version: 1,
@@ -66,6 +67,7 @@ describe("LabelModelPlanner", () => {
     registry_key: "mask2former-model",
     name: "Mask2Former",
     task: "instance-segmentation",
+    provenance: "declared",
     label_ids: [1, 2],
     input_contract: {
       schema_version: 1,
@@ -95,6 +97,7 @@ describe("LabelModelPlanner", () => {
     registry_key: "clip-seg-model",
     name: "CLIP-Seg Prompted",
     task: "instance-segmentation",
+    provenance: "declared",
     label_ids: [],
     input_contract: {
       schema_version: 1,
@@ -121,6 +124,23 @@ describe("LabelModelPlanner", () => {
   };
 
   const models = [sam3Model, mask2formerModel, textModel];
+
+  const legacyModel = {
+    registry_key: "legacy-mask2former",
+    name: "Legacy Mask2Former",
+    task: "instance-segmentation",
+    provenance: "legacy_default",
+    label_ids: [],
+    input_contract: {
+      schema_version: 1,
+      task: "instance-segmentation",
+      conditioning: {
+        kind: "none",
+        user_selectable_count: false,
+      },
+      parameters: [],
+    },
+  };
 
   it("groups labels by hierarchy depth correctly", () => {
     const levels = groupLabelsByLevel(labelsById);
@@ -174,6 +194,7 @@ describe("LabelModelPlanner", () => {
     // Count input is NOT rendered because user_selectable_count is false
     expect(screen.queryByRole("spinbutton", { name: /images for cell/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: /top-k/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: /min\. confidence for cell/i })).not.toBeInTheDocument();
 
     // Notes are rendered
     expect(screen.getByText(/SAM 3 uses 1 full reference image/i)).toBeInTheDocument();
@@ -231,6 +252,99 @@ describe("LabelModelPlanner", () => {
     expect(countInput).toBeInTheDocument();
     expect(countInput.id).toBe("label-1-count");
     expect(countInput).not.toHaveAttribute("max");
+    expect(screen.queryByRole("combobox", { name: /retrieval strategy for cell/i })).not.toBeInTheDocument();
+  });
+
+  it("renders and updates strategy for the legacy cross-image fallback", () => {
+    const onChange = jest.fn();
+    const legacyCrossImageModel = {
+      registry_key: "legacy-cross-image",
+      name: "Legacy Cross-Image Suggestion",
+      task: "cross-image-suggestion",
+      provenance: "legacy_default",
+      label_ids: [],
+    };
+    const step = {
+      label_id: 1,
+      model_registry_key: "legacy-cross-image",
+      task: "cross-image-suggestion",
+      inputs: {
+        conditioning: { count: 5, strategy: "global_scene" },
+        parameters: {},
+      },
+      retrieval_strategy: "global_scene",
+      top_k: 5,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={[legacyCrossImageModel]}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    const strategySelect = screen.getByRole("combobox", {
+      name: /retrieval strategy for cell/i,
+    });
+    expect(strategySelect).toHaveValue("global_scene");
+
+    fireEvent.change(strategySelect, { target: { value: "region_mean" } });
+
+    expect(onChange).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        retrieval_strategy: "region_mean",
+        inputs: expect.objectContaining({
+          conditioning: expect.objectContaining({ strategy: "region_mean" }),
+        }),
+      })
+    );
+  });
+
+  it("does not show a strategy selector for ordinary instance conditioning", () => {
+    const ordinaryInstanceModel = {
+      registry_key: "ordinary-instance-suggestion",
+      name: "Ordinary Instance Suggestion",
+      task: "instance-suggestion",
+      label_ids: [],
+      input_contract: {
+        schema_version: 1,
+        task: "instance-suggestion",
+        conditioning: {
+          kind: "instances",
+          unit: "instance",
+          min_units: 1,
+          max_units: 4,
+          user_selectable_count: true,
+        },
+        parameters: [],
+      },
+    };
+    const step = {
+      label_id: 1,
+      model_registry_key: "ordinary-instance-suggestion",
+      task: "instance-suggestion",
+      inputs: {
+        conditioning: { count: 2 },
+        parameters: {},
+      },
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={[ordinaryInstanceModel]}
+        strategies={strategies}
+        steps={[step]}
+        onChange={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole("spinbutton", { name: /instances for cell/i })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: /retrieval strategy for cell/i })).not.toBeInTheDocument();
   });
 
   it("renders Mask2Former with threshold and without exemplar controls", () => {
@@ -264,6 +378,46 @@ describe("LabelModelPlanner", () => {
 
     // Threshold parameter is rendered
     expect(screen.getByRole("slider", { name: /score threshold/i })).toBeInTheDocument();
+  });
+
+  it("renders the gateway confidence control only for legacy fallback models", () => {
+    const onChange = jest.fn();
+    const step = {
+      label_id: 1,
+      model_registry_key: "legacy-mask2former",
+      task: "instance-segmentation",
+      inputs: {
+        conditioning: {},
+        parameters: {},
+      },
+      min_confidence: 0.2,
+    };
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={[legacyModel]}
+        strategies={strategies}
+        steps={[step]}
+        onChange={onChange}
+      />
+    );
+
+    const confidenceInput = screen.getByRole("spinbutton", {
+      name: /min\. confidence for cell/i,
+    });
+    expect(confidenceInput).toHaveValue(0.2);
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+
+    fireEvent.change(confidenceInput, { target: { value: "0.65" } });
+
+    expect(onChange).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        min_confidence: 0.65,
+        inputs: expect.objectContaining({ parameters: {} }),
+      })
+    );
   });
 
   it("renders concept_text prompt input for text-conditioned models", () => {
