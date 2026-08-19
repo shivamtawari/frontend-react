@@ -29,12 +29,10 @@ describe("plannerContractUtils", () => {
 
     const legacyCross = { registry_key: "legacy-cross", task: "cross-image-suggestion" };
     expect(getEffectiveContract(legacyCross)).toEqual(LEGACY_TASK_DEFAULTS["cross-image-suggestion"]);
-    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].conditioning.kind).toBe("reference_images");
-    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].parameters.map((p) => p.key)).toEqual([
-      "threshold",
-      "mask_threshold",
-      "min_target_frac",
-    ]);
+    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].conditioning.kind).toBe("instances");
+    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].conditioning.unit).toBe("instance");
+    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].conditioning.max_units).toBe(32);
+    expect(LEGACY_TASK_DEFAULTS["cross-image-suggestion"].parameters).toEqual([]);
   });
 
   it("extracts declared default parameters", () => {

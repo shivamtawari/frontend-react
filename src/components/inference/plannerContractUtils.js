@@ -18,60 +18,53 @@ export const LEGACY_TASK_DEFAULTS = {
       embedding_kinds: [],
       user_selectable_count: false,
     },
-    parameters: [
-      {
-        key: "threshold",
-        label: "Confidence Threshold",
-        type: "float",
-        default_value: 0.5,
-        min_value: 0.0,
-        max_value: 1.0,
-        step: 0.05,
-      },
-    ],
+    parameters: [],
+    notes: "Legacy default contract for autonomous instance segmentation.",
   },
   "cross-image-suggestion": {
     schema_version: 1,
     task: "cross-image-suggestion",
     conditioning: {
-      kind: "reference_images",
-      unit: "image",
+      kind: "instances",
+      unit: "instance",
       min_units: 1,
-      max_units: 1,
-      requires_complete_annotation: true,
+      max_units: 32,
+      requires_complete_annotation: false,
+      embedding_kinds: [],
+      user_selectable_count: true,
+    },
+    parameters: [],
+    notes: "Legacy default contract for cross-image exemplar transfer.",
+  },
+  "instance-suggestion": {
+    schema_version: 1,
+    task: "instance-suggestion",
+    conditioning: {
+      kind: "instances",
+      unit: "instance",
+      min_units: 1,
+      max_units: 32,
+      requires_complete_annotation: false,
+      embedding_kinds: [],
+      user_selectable_count: true,
+    },
+    parameters: [],
+    notes: "Legacy default contract for interactive instance suggestion.",
+  },
+  "prompted-segmentation": {
+    schema_version: 1,
+    task: "prompted-segmentation",
+    conditioning: {
+      kind: "none",
+      unit: null,
+      min_units: 0,
+      max_units: null,
+      requires_complete_annotation: false,
       embedding_kinds: [],
       user_selectable_count: false,
     },
-    parameters: [
-      {
-        key: "threshold",
-        label: "Confidence Threshold",
-        type: "float",
-        default_value: 0.3,
-        min_value: 0.0,
-        max_value: 1.0,
-        step: 0.05,
-      },
-      {
-        key: "mask_threshold",
-        label: "Mask Threshold",
-        type: "float",
-        default_value: 0.5,
-        min_value: 0.0,
-        max_value: 1.0,
-        step: 0.05,
-      },
-      {
-        key: "min_target_frac",
-        label: "Min Target Fraction",
-        type: "float",
-        default_value: 0.5,
-        min_value: 0.0,
-        max_value: 1.0,
-        step: 0.05,
-      },
-    ],
-    notes: "Legacy default contract for cross-image exemplar transfer.",
+    parameters: [],
+    notes: "Legacy default contract for point/box prompted segmentation.",
   },
 };
 
@@ -128,7 +121,7 @@ export const getDefaultConditioning = (contract, strategies = [], label = null) 
 
   const result = { count };
 
-  if (kind === "reference_images") {
+  if (kind === "reference_images" || (kind === "instances" && contract?.task === "cross-image-suggestion")) {
     const availableStrategy = strategies.find((s) => s.available)?.key || strategies[0]?.key || "global_scene";
     result.strategy = availableStrategy;
   }

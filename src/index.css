@@ -41,6 +41,29 @@ input:focus, select:focus, textarea:focus {
   @apply outline-none ring-2 ring-ac;
 }
 
+/* Ensure native select and options preserve contrast across dark/light themes */
+select {
+  color-scheme: dark;
+}
+
+[data-theme='light'] select {
+  color-scheme: light;
+}
+
+select option {
+  background-color: var(--p1, #151b23);
+  color: var(--t1, #e6edf3);
+}
+
+[data-theme='light'] select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+select option:disabled {
+  color: var(--t3, #6b7280);
+}
+
 /* Modern button styles */
 .btn {
   @apply px-4 py-2 rounded-6 font-medium transition-colors duration-150;
