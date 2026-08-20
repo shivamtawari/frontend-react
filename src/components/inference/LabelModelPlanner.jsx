@@ -72,6 +72,7 @@ function ModelRow({ label, step, models, strategies, onChange }) {
     const condSpec = contract?.conditioning;
     const usesRetrievalStrategy =
         condSpec?.kind === "reference_images" ||
+        condSpec?.kind === "embeddings" ||
         (condSpec?.kind === "instances" &&
             (step?.inputs?.conditioning?.strategy != null || step?.retrieval_strategy != null));
 
@@ -346,9 +347,9 @@ export default function LabelModelPlanner({ labelsById, models, strategies, step
             </p>
             {models.some(
                 (model) =>
-                    model.task === "cross-image-suggestion" ||
                     model.input_contract?.conditioning?.kind === "reference_images" ||
-                    model.input_contract?.conditioning?.kind === "instances"
+                    model.input_contract?.conditioning?.kind === "instances" ||
+                    model.input_contract?.conditioning?.kind === "embeddings"
             ) && (
                 <p className="flex items-start gap-2 text-[11px] text-t3">
                     <Sparkles size={13} className="shrink-0 mt-0.5" />

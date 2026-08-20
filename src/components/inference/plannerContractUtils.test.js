@@ -105,6 +105,7 @@ describe("plannerContractUtils", () => {
     };
     expect(getDefaultConditioning(contract, sampleStrategies)).toEqual({
       count: 4, // 5 clamped to max_units 4
+      strategy: "global_scene",
     });
   });
 
@@ -144,7 +145,7 @@ describe("plannerContractUtils", () => {
           mask_threshold: -1.0,
         },
       },
-      min_confidence: 0.35,
+      min_confidence: 0,
       retrieval_strategy: "global_scene",
       top_k: 1,
     });
@@ -167,7 +168,7 @@ describe("plannerContractUtils", () => {
     expect(step.inputs.parameters).not.toHaveProperty("min_confidence");
   });
 
-  it("updates parameters and syncs legacy min_confidence", () => {
+  it("updates parameters without mutating gateway min_confidence", () => {
     const initialStep = {
       label_id: 1,
       inputs: { parameters: { threshold: 0.5, mask_threshold: 0.0 } },
@@ -176,11 +177,11 @@ describe("plannerContractUtils", () => {
 
     const updated = updateStepParameter(initialStep, "threshold", 0.8);
     expect(updated.inputs.parameters.threshold).toBe(0.8);
-    expect(updated.min_confidence).toBe(0.8);
+    expect(updated.min_confidence).toBe(0.5);
 
     const updatedOther = updateStepParameter(updated, "mask_threshold", 1.5);
     expect(updatedOther.inputs.parameters.mask_threshold).toBe(1.5);
-    expect(updatedOther.min_confidence).toBe(0.8);
+    expect(updatedOther.min_confidence).toBe(0.5);
   });
 
   it("updates conditioning and syncs legacy top_k and retrieval_strategy", () => {

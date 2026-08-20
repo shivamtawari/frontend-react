@@ -233,7 +233,7 @@ describe("BatchInferencePage Contract Submission", () => {
                 },
             ],
         });
-        expect(submittedPayload.steps[0]).toHaveProperty("min_confidence", 0.75);
+        expect(submittedPayload.steps[0]).toHaveProperty("min_confidence", 0);
         expect(submittedPayload.steps[0]).not.toHaveProperty("retrieval_strategy");
         expect(submittedPayload.steps[0]).not.toHaveProperty("top_k");
         expect(submittedPayload.steps[0].inputs.parameters).not.toHaveProperty("min_confidence");

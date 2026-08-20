@@ -121,7 +121,7 @@ export const getDefaultConditioning = (contract, strategies = [], label = null) 
 
   const result = { count };
 
-  if (kind === "reference_images" || (kind === "instances" && contract?.task === "cross-image-suggestion")) {
+  if (kind === "reference_images" || kind === "instances" || kind === "embeddings") {
     const availableStrategy = strategies.find((s) => s.available)?.key || strategies[0]?.key || "global_scene";
     result.strategy = availableStrategy;
   }
@@ -147,7 +147,7 @@ export const initStep = (label, model, strategies = []) => {
       parameters,
     },
     // Legacy migration compatibility fields
-    min_confidence: parameters.threshold ?? 0,
+    min_confidence: 0,
     retrieval_strategy: conditioning.strategy ?? null,
     top_k: conditioning.count ?? 5,
   };
@@ -156,7 +156,7 @@ export const initStep = (label, model, strategies = []) => {
 };
 
 /**
- * Updates a parameter in the step's canonical inputs envelope and syncs legacy fields.
+ * Updates a parameter in the step's canonical inputs envelope.
  */
 export const updateStepParameter = (step, key, value) => {
   if (!step) return step;
@@ -171,7 +171,6 @@ export const updateStepParameter = (step, key, value) => {
       ...(step.inputs || {}),
       parameters: nextParameters,
     },
-    min_confidence: key === "threshold" && typeof value === "number" ? value : step.min_confidence,
   };
 };
 

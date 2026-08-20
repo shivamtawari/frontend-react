@@ -536,7 +536,6 @@ describe("LabelModelPlanner", () => {
             threshold: 0.85,
           }),
         }),
-        min_confidence: 0.85,
       })
     );
   });
