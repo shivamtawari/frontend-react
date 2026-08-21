@@ -77,8 +77,13 @@ describe("DynamicHyperParameter", () => {
     );
 
     const label = screen.getByText("Min Target Fraction");
-    expect(label).toHaveAttribute(
-      "title",
+    expect(label).not.toHaveAttribute("title");
+
+    const info = screen.getByRole("img", {
+      name: "About Min Target Fraction: Minimum size of predicted target object relative to image",
+    });
+    expect(info).not.toHaveAttribute("title");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
       "Minimum size of predicted target object relative to image"
     );
   });
