@@ -63,48 +63,61 @@ const DatasetsOverview = ({ onOpenDataset }) => {
   useEffect(() => {
     console.log("Is Creating", isCreating);
   }, [isCreating]);
-  // Fetch sample images and annotation stats for all datasets
+  // Fetch sample images immediately so cards display thumbnails without waiting for
+  // progress calculations, and load annotation progress stats in the background.
   useEffect(() => {
-    const fetchDatasetData = async () => {
-      if (datasets.length === 0) return;
+    if (datasets.length === 0) {
+      setLoadingData(false);
+      return;
+    }
 
-      setLoadingData(true);
-      const imagesData = {};
-      const statsData = {};
+    let isCancelled = false;
 
+    // 1. Fetch sample thumbnails immediately for all datasets
+    const thumbnailPromises = datasets.map(async (dataset) => {
       try {
-        // Fetch data for all datasets in parallel
-        const promises = datasets.map(async (dataset) => {
-          try {
-            const [images, stats] = await Promise.all([
-              getSampleImages(dataset.id, 4),
-              getAnnotationProgress(dataset.id),
-            ]);
-
-            imagesData[dataset.id] = images;
-            statsData[dataset.id] = stats;
-          } catch (err) {
-            console.error(
-              `Error fetching data for dataset ${dataset.id}:`,
-              err
-            );
-            imagesData[dataset.id] = [];
-            statsData[dataset.id] = { ...emptyPhaseCounts(), total: 0 };
-          }
-        });
-
-        await Promise.all(promises);
-
-        setDatasetImages(imagesData);
-        setDatasetStats(statsData);
+        const images = await getSampleImages(dataset.id, 4);
+        if (!isCancelled) {
+          setDatasetImages((prev) => ({ ...prev, [dataset.id]: images }));
+        }
       } catch (err) {
-        console.error("Error fetching dataset data:", err);
-      } finally {
+        console.error(`Error fetching images for dataset ${dataset.id}:`, err);
+        if (!isCancelled) {
+          setDatasetImages((prev) => ({ ...prev, [dataset.id]: [] }));
+        }
+      }
+    });
+
+    // 2. Fetch annotation progress in the background progressively
+    setLoadingData(true);
+    const progressPromises = datasets.map(async (dataset) => {
+      try {
+        const stats = await getAnnotationProgress(dataset.id);
+        if (!isCancelled) {
+          setDatasetStats((prev) => ({ ...prev, [dataset.id]: stats }));
+        }
+      } catch (err) {
+        console.error(`Error fetching stats for dataset ${dataset.id}:`, err);
+        if (!isCancelled) {
+          setDatasetStats((prev) => ({
+            ...prev,
+            [dataset.id]: { ...emptyPhaseCounts(), total: 0 },
+          }));
+        }
+      }
+    });
+
+    Promise.allSettled(thumbnailPromises);
+
+    Promise.allSettled(progressPromises).finally(() => {
+      if (!isCancelled) {
         setLoadingData(false);
       }
-    };
+    });
 
-    fetchDatasetData();
+    return () => {
+      isCancelled = true;
+    };
   }, [datasets, getSampleImages, getAnnotationProgress]);
 
   const handleOpenDataset = async (dataset) => {
