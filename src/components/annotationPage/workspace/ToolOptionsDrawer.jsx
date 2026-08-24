@@ -1,6 +1,7 @@
 import React from 'react';
 import { Ban, ChevronLeft, Pencil, Sparkles } from 'lucide-react';
 import ServiceCard from './ServiceCard';
+import CrossImageSuggestionCard from './CrossImageSuggestionCard';
 import useAnnotationServices from './useAnnotationServices';
 import useRailTools from './useRailTools';
 import { PROMPT_ACTIONS, getPromptAction, getRailTool } from './toolModel';
@@ -20,8 +21,14 @@ const ACTION_ICONS = { Ban, Sparkles, Pencil };
 const ToolOptionsDrawer = () => {
   const toggleDrawer = useToggleLeftDrawer();
   const { railTool, promptAction, changePromptAction } = useRailTools();
-  const { services, showInstanceWarning, closeInstanceWarning, confirmInstanceRun } =
-    useAnnotationServices();
+  const {
+    services,
+    policyLoading,
+    policyError,
+    showInstanceWarning,
+    closeInstanceWarning,
+    confirmInstanceRun,
+  } = useAnnotationServices();
 
   const toolName = getRailTool(railTool).name;
 
@@ -97,10 +104,23 @@ const ToolOptionsDrawer = () => {
             <Sparkles size={14} className="text-ac flex-none" />
             <span className="text-row font-bold text-t1">Annotation services</span>
           </div>
+          {policyLoading && (
+            <p className="mb-[9px] px-[8px] py-[5px] rounded-6 bg-well2 text-ctl text-t2" role="status">
+              Loading model routing policy…
+            </p>
+          )}
+          {policyError && (
+            <p className="mb-[9px] px-[8px] py-[5px] rounded-6 bg-errBg text-ctl text-err" role="alert">
+              Unable to load model routing policy: {policyError}
+            </p>
+          )}
           <div className="flex flex-col gap-[9px]">
-            {services.map((service) => (
-              <ServiceCard key={service.key} service={service} />
-            ))}
+            {services
+              .filter((s) => s.key === 'prompted' || s.key === 'instance')
+              .map((service) => (
+                <ServiceCard key={service.key} service={service} />
+              ))}
+            <CrossImageSuggestionCard />
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
     Cpu,
     Layers,
     Loader2,
+    RotateCcw,
     Scissors,
     StopCircle,
     Trash2,
@@ -58,7 +59,13 @@ function Stat({ icon: Icon, value, label, tone = "text-t1" }) {
  * actually being respected — level 2 stays empty until level 1 is full.
  */
 export default function InferenceProgressPanel({
-    job, onCancel, isCancelling, onReview, onDelete, onOpenImage,
+    job,
+    onCancel,
+    isCancelling,
+    onReview,
+    onDelete,
+    onOpenImage,
+    onLoadIntoPlanner,
 }) {
     const [failedItems, setFailedItems] = useState([]);
 
@@ -239,7 +246,7 @@ export default function InferenceProgressPanel({
                 {isActive && (
                     <button
                         onClick={onCancel}
-                        disabled={isCancelling || job.status === "cancelling"}
+                        disabled={isCancelling}
                         className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-onAccent bg-err rounded-lg hover:brightness-110 disabled:opacity-60"
                     >
                         {isCancelling ? (
@@ -247,7 +254,7 @@ export default function InferenceProgressPanel({
                         ) : (
                             <StopCircle className="w-4 h-4" />
                         )}
-                        {job.status === "cancelling" ? "Stopping after this image…" : "Stop run"}
+                        {job.status === "cancelling" ? "Force stop" : "Stop run"}
                     </button>
                 )}
                 {!isActive && job.contours_created > 0 && (
@@ -257,6 +264,17 @@ export default function InferenceProgressPanel({
                     >
                         <ClipboardCheck className="w-4 h-4" />
                         Review the predictions
+                    </button>
+                )}
+                {!isActive && onLoadIntoPlanner && (
+                    <button
+                        type="button"
+                        onClick={() => onLoadIntoPlanner(job)}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-t1 bg-p1 border border-ln rounded-lg hover:bg-hv transition-colors"
+                        title="Load this run's configuration steps and options into the plan editor"
+                    >
+                        <RotateCcw className="w-4 h-4" />
+                        Load into Planner
                     </button>
                 )}
                 {/* Always reachable except while a worker is mid-image: a run that failed to

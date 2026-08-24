@@ -59,6 +59,10 @@ const getWsBaseUrl = () => {
     if (apiBase.startsWith('http://')) {
       return apiBase.replace(/^http:\/\//, 'ws://');
     }
+    if (apiBase.startsWith('/') && typeof window !== 'undefined' && window.location.host) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}${apiBase}`;
+    }
   }
 
   return 'ws://localhost:8000';
@@ -712,5 +716,3 @@ class AnnotationSession {
 const annotationSession = new AnnotationSession();
 
 export default annotationSession;
-
-

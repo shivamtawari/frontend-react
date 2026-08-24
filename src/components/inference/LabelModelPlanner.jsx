@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronRight, Cpu, Sparkles, Star, Layers } from "lucide-react";
 import DynamicHyperParameter from "../datasets/training/DynamicHyperParameter";
+import { BATCH_INFERENCE_TASKS } from "../../constants/tasks";
 import {
     getEffectiveContract,
     initStep,
@@ -56,10 +57,12 @@ export const groupLabelsByLevel = (labelsById) => {
         }));
 };
 
-/** Models that may be bound to a label: class-agnostic ones, plus those predicting it. */
-export const modelsForLabel = (models, labelId) =>
+/** Models that may be bound to a label: class-agnostic ones, plus those predicting it, filtered to allowed tasks. */
+export const modelsForLabel = (models, labelId, allowedTasks = BATCH_INFERENCE_TASKS) =>
     (models || []).filter(
-        (model) => !model.label_ids || model.label_ids.length === 0 || model.label_ids.includes(labelId)
+        (model) =>
+            (!allowedTasks || allowedTasks.includes(model.task)) &&
+            (!model.label_ids || model.label_ids.length === 0 || model.label_ids.includes(labelId))
     );
 
 function ModelRow({ label, step, models, strategies, onChange }) {
@@ -297,9 +300,19 @@ function ModelRow({ label, step, models, strategies, onChange }) {
     );
 }
 
-export default function LabelModelPlanner({ labelsById, models, strategies, steps, onChange }) {
+export default function LabelModelPlanner({
+    labelsById,
+    models,
+    strategies,
+    steps,
+    onChange,
+    allowedTasks = BATCH_INFERENCE_TASKS,
+}) {
     const levels = groupLabelsByLevel(labelsById);
     const stepByLabel = new Map(steps.map((step) => [step.label_id, step]));
+    const batchModels = React.useMemo(() => {
+        return (models || []).filter((m) => !allowedTasks || allowedTasks.includes(m.task));
+    }, [models, allowedTasks]);
 
     if (levels.length === 0) {
         return (
@@ -329,7 +342,7 @@ export default function LabelModelPlanner({ labelsById, models, strategies, step
                                 key={label.id}
                                 label={label}
                                 step={stepByLabel.get(label.id) || null}
-                                models={models}
+                                models={batchModels}
                                 strategies={strategies}
                                 onChange={onChange}
                             />
@@ -345,7 +358,7 @@ export default function LabelModelPlanner({ labelsById, models, strategies, step
                 whichever label it is bound to, so mixing specialists and multiclass models in
                 one run is fine.
             </p>
-            {models.some(
+            {batchModels.some(
                 (model) =>
                     model.input_contract?.conditioning?.kind === "reference_images" ||
                     model.input_contract?.conditioning?.kind === "instances" ||

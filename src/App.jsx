@@ -16,6 +16,7 @@ import DocumentationPage from "./pages/DocumentationPage";
 import QuantificationPage from "./pages/QuantificationPage";
 import ModelZooPage from "./pages/ModelZooPage";
 import ModelTrainingPage from "./pages/ModelTrainingPage";
+import ModelOrchestrationPage from "./pages/ModelOrchestrationPage";
 import BatchInferencePage from "./pages/BatchInferencePage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
 import AnnotationViewerPage from "./pages/AnnotationViewerPage";
@@ -157,6 +158,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ModelTrainingPage />
+                </ProtectedRoute>
+              }
+            />
+            {/* Model orchestration: configure task and label default models and routing */}
+            <Route
+              path="/dataset/:datasetId/model-orchestration"
+              element={
+                <ProtectedRoute>
+                  <ModelOrchestrationPage />
                 </ProtectedRoute>
               }
             />

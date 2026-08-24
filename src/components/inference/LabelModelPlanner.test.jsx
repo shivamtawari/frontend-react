@@ -340,6 +340,7 @@ describe("LabelModelPlanner", () => {
         strategies={strategies}
         steps={[step]}
         onChange={jest.fn()}
+        allowedTasks={["instance-suggestion"]}
       />
     );
 
@@ -538,5 +539,52 @@ describe("LabelModelPlanner", () => {
         }),
       })
     );
+  });
+
+  it("excludes interactive models from the batch planner dropdown", () => {
+    const mixedModels = [
+      {
+        registry_key: "sam2-prompted",
+        name: "SAM 2 Prompted",
+        task: "prompted-segmentation",
+        label_ids: [],
+      },
+      {
+        registry_key: "sam3-intra",
+        name: "SAM 3 Intra",
+        task: "instance-suggestion",
+        label_ids: [],
+      },
+      {
+        registry_key: "m2f-batch",
+        name: "Mask2Former Batch",
+        task: "instance-segmentation",
+        label_ids: [],
+      },
+      {
+        registry_key: "sam3-cross",
+        name: "SAM 3 Cross Exemplar",
+        task: "cross-image-suggestion",
+        label_ids: [],
+      },
+    ];
+
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={mixedModels}
+        strategies={strategies}
+        steps={[]}
+        onChange={jest.fn()}
+      />
+    );
+
+    const cellSelect = screen.getByLabelText("Model for cell");
+    const optionTexts = Array.from(cellSelect.options).map((opt) => opt.textContent);
+
+    expect(optionTexts).toContain("Mask2Former Batch");
+    expect(optionTexts.some((t) => t.includes("SAM 3 Cross Exemplar"))).toBe(true);
+    expect(optionTexts).not.toContain("SAM 2 Prompted");
+    expect(optionTexts).not.toContain("SAM 3 Intra");
   });
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Database, Brain, BarChart3, Tag, SquarePen, Download, Eye, GraduationCap, Users2, ClipboardCheck, Ruler, Wrench, Settings, HelpCircle, Wand2 } from 'lucide-react';
+import { Database, Brain, BarChart3, Tag, SquarePen, Download, Eye, GraduationCap, Users2, ClipboardCheck, Ruler, Wrench, Settings, HelpCircle, Wand2, Cpu } from 'lucide-react';
 import ManagementCard from './ManagementCard';
 import PhaseProgressBar from '../PhaseProgressBar';
 import RoleBadge from '../RoleBadge';
@@ -37,6 +37,7 @@ const ManagementCardsView = ({
   onLabelManagementClick,
   onExportCocoClick,
   onModelTrainingClick,
+  onModelOrchestrationClick,
   onBatchInferenceClick,
   onBrowseAnnotations,
   onManageAccessClick,
@@ -245,6 +246,16 @@ const ManagementCardsView = ({
       onClick: onModelZooClick,
       permitted: canAny([Permission.AI_INTERACTIVE, Permission.AI_BATCH_INFER]),
       color: 'purple',
+    },
+    {
+      id: 'model-orchestration',
+      group: 'models',
+      icon: Cpu,
+      title: 'Model Orchestration',
+      description: 'Configure default models and per-label routing policies for interactive tools, cross-image suggestions, and batch runs',
+      onClick: onModelOrchestrationClick,
+      permitted: canAny([Permission.AI_INTERACTIVE, Permission.AI_BATCH_INFER]),
+      color: 'indigo',
     },
     {
       id: 'model-training',

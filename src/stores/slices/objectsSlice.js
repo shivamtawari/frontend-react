@@ -9,11 +9,20 @@ export const createObjectsSlice = (set) => ({
   setDatasetLabels: (labelsArray, labelsMap) => set((state) => {
     state.objects.datasetLabels = labelsArray;
     state.objects.datasetLabelsMap = labelsMap;
+    if (state.workspace?.activeLabelId != null) {
+      const exists = Array.isArray(labelsArray) && labelsArray.some((l) => Number(l.id) === Number(state.workspace.activeLabelId));
+      if (!exists) {
+        state.workspace.activeLabelId = null;
+      }
+    }
   }),
 
   clearDatasetLabels: () => set((state) => {
     state.objects.datasetLabels = [];
     state.objects.datasetLabelsMap = null;
+    if (state.workspace?.activeLabelId != null) {
+      state.workspace.activeLabelId = null;
+    }
   }),
 
   addObject: (object) => set((state) => {
@@ -66,11 +75,12 @@ export const createObjectsSlice = (set) => ({
     
     // labelsMap is always a Map or null (constructed in AnnotationPageV2)
     const labelIdToNameMap = labelsMap;
+    const payload = hierarchy?.contours || hierarchy;
     
-    if (hierarchy && Array.isArray(hierarchy.root_contours)) {
+    if (payload && Array.isArray(payload.root_contours)) {
       // Queue entries are { contour, parentId } so we preserve hierarchy when backend
       // returns nested children without parent_id on each node (e.g. after page refresh)
-      const queue = hierarchy.root_contours.map(c => ({ contour: c, parentId: null }));
+      const queue = payload.root_contours.map(c => ({ contour: c, parentId: null }));
       let orderCounter = 0;
 
       while (queue.length > 0) {

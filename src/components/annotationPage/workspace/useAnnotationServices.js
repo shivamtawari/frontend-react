@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useAvailablePromptedModels,
   useAvailableSuggestionModels,
@@ -20,29 +20,54 @@ import {
   useInstanceRunRequested,
   useSetInstanceRunRequested,
   useSetInstanceWarningModalOpen,
+  useActiveLabelId,
+  useModelFavorites,
 } from '../../../stores/selectors/annotationSelectors';
+import { useDataset } from '../../../contexts/DatasetContext';
+import { getInferenceRoutingPolicy } from '../../../api/inference';
+import {
+  resolveRoutingBinding,
+  isModelCompatibleWithLabel,
+  matchesModelKey,
+} from '../../../utils/inferenceRouting';
 import annotationSession from '../../../services/annotationSession';
 import useModelSwitchPreloader from '../../../hooks/useModelSwitchPreloader';
 import { useInstanceSegmentation } from '../../../hooks/useInstanceSegmentation';
 
-const getFirstModelId = (models) => {
-  const first = (models || []).find((m) => m?.id || m?.registry_key || m?.identifier);
-  return first?.id || first?.registry_key || first?.identifier || null;
+const getModelKey = (model) => model?.id || model?.registry_key || model?.identifier || null;
+
+const getFallbackModelId = (models, task, favoriteKey, labelId = null) => {
+  const compatibleModels = (models || []).filter((model) =>
+    isModelCompatibleWithLabel(model, labelId)
+  );
+  const favorite = favoriteKey
+    ? compatibleModels.find((model) => matchesModelKey(model, task, favoriteKey))
+    : null;
+  return getModelKey(favorite || compatibleModels[0]);
 };
 
+const isUsableBinding = (resolved) =>
+  Boolean(resolved?.binding && resolved.model && resolved.isCompatible && !resolved.isStale);
+
+const getPolicyErrorMessage = (error) =>
+  error?.message || 'Failed to load model routing policy';
+
 /**
- * Model lists, selections, defaults, preloading and the instance-segmentation
+ * Model lists, selections, dataset policy defaults, preloading and the instance-segmentation
  * write-mode flow for the three annotation services.
- *
- * Lifted verbatim from the old Services component so the options drawer only
- * has to render. The behaviour it preserves:
- *  - fetch each model list once,
- *  - force a deterministic default selection as soon as a list arrives,
- *  - push every selection change to the backend so the model is warm,
- *  - open the instance write-mode modal both from its Run button and from the
- *    `3` shortcut, which sets `instanceRunRequested` in the store.
  */
 export default function useAnnotationServices() {
+  const { currentDataset } = useDataset();
+  const datasetId = currentDataset?.id;
+  const activeLabelId = useActiveLabelId();
+  const favorites = useModelFavorites();
+  const [policyState, setPolicyState] = useState(() => ({
+    datasetId,
+    status: datasetId != null ? 'loading' : 'idle',
+    policy: null,
+    error: null,
+  }));
+
   const fetchPromptedModels = useFetchAvailablePromptedModels();
   const fetchSuggestionModels = useFetchAvailableSuggestionModels();
   const fetchInstanceModels = useFetchAvailableInstanceModels();
@@ -71,12 +96,64 @@ export default function useAnnotationServices() {
 
   const [showInstanceWarning, setShowInstanceWarning] = useState(false);
 
+  const policyReady =
+    datasetId != null &&
+    policyState.datasetId === datasetId &&
+    policyState.status === 'loaded';
+  const policyLoading =
+    datasetId != null &&
+    (policyState.datasetId !== datasetId || policyState.status === 'loading');
+  const policyError =
+    policyState.datasetId === datasetId && policyState.status === 'error'
+      ? policyState.error
+      : null;
+  const policy = policyReady ? policyState.policy : null;
+
+  const promptedRouting = useMemo(
+    () =>
+      policyReady
+        ? resolveRoutingBinding(
+            policy,
+            'prompted-segmentation',
+            activeLabelId,
+            availablePromptedModels
+          )
+        : null,
+    [policy, policyReady, activeLabelId, availablePromptedModels]
+  );
+  const suggestionRouting = useMemo(
+    () =>
+      policyReady
+        ? resolveRoutingBinding(policy, 'instance-suggestion', null, availableSuggestionModels)
+        : null,
+    [policy, policyReady, availableSuggestionModels]
+  );
+  const instanceRouting = useMemo(
+    () =>
+      policyReady
+        ? resolveRoutingBinding(policy, 'instance-segmentation', null, availableInstanceModels)
+        : null,
+    [policy, policyReady, availableInstanceModels]
+  );
+  const instanceBindingInvalid =
+    policyReady && Boolean(instanceRouting?.binding) && !isUsableBinding(instanceRouting);
+  const canRunInstance =
+    policyReady &&
+    !instanceBindingInvalid &&
+    !isRunningInstance &&
+    Boolean(
+      instanceModel &&
+        availableInstanceModels.some((model) =>
+          matchesModelKey(model, 'instance-segmentation', instanceModel)
+        )
+    );
+
   useEffect(() => {
     if (instanceRunRequested) {
-      setShowInstanceWarning(true);
+      if (canRunInstance) setShowInstanceWarning(true);
       setInstanceRunRequested(false);
     }
-  }, [instanceRunRequested, setInstanceRunRequested]);
+  }, [instanceRunRequested, canRunInstance, setInstanceRunRequested]);
 
   // Mirrored to the store so keyboard shortcuts don't steal Enter while the
   // modal has focus.
@@ -84,32 +161,138 @@ export default function useAnnotationServices() {
     setInstanceWarningModalOpen(showInstanceWarning);
   }, [showInstanceWarning, setInstanceWarningModalOpen]);
 
+  // Fetch model lists on mount if empty
   useEffect(() => {
     if (availablePromptedModels.length === 0) fetchPromptedModels();
     if (availableSuggestionModels.length === 0) fetchSuggestionModels();
     if (availableInstanceModels.length === 0) fetchInstanceModels();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load dataset routing policy
   useEffect(() => {
-    if (!promptedModel) {
-      const id = getFirstModelId(availablePromptedModels);
-      if (id) setPromptedModel(id);
-    }
-  }, [promptedModel, availablePromptedModels, setPromptedModel]);
+    let cancelled = false;
+    // A model selected for the previous dataset must not remain executable
+    // while the next dataset's policy is loading (or if that load fails).
+    setPromptedModel(null);
+    setSuggestionModel(null);
+    setInstanceModel(null);
+    setPolicyState({
+      datasetId,
+      status: datasetId != null ? 'loading' : 'idle',
+      policy: null,
+      error: null,
+    });
 
-  useEffect(() => {
-    if (!suggestionModel) {
-      const id = getFirstModelId(availableSuggestionModels);
-      if (id) setSuggestionModel(id);
+    if (datasetId == null) {
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [suggestionModel, availableSuggestionModels, setSuggestionModel]);
 
+    getInferenceRoutingPolicy(datasetId)
+      .then((res) => {
+        if (!cancelled) {
+          setPolicyState({ datasetId, status: 'loaded', policy: res || null, error: null });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPolicyState({
+            datasetId,
+            status: 'error',
+            policy: null,
+            error: getPolicyErrorMessage(err),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetId, setPromptedModel, setSuggestionModel, setInstanceModel]);
+
+  // Prompted Segmentation model resolution (active label override -> task default -> favorite/first compatible)
   useEffect(() => {
-    if (!instanceModel) {
-      const id = getFirstModelId(availableInstanceModels);
-      if (id) setInstanceModel(id);
+    if (!policyReady || availablePromptedModels.length === 0) return;
+    if (promptedRouting?.binding) {
+      if (isUsableBinding(promptedRouting)) {
+        const modelId = getModelKey(promptedRouting.model);
+        if (modelId) setPromptedModel(modelId);
+      } else {
+        setPromptedModel(null);
+      }
+      return;
     }
-  }, [instanceModel, availableInstanceModels, setInstanceModel]);
+
+    const modelId = getFallbackModelId(
+      availablePromptedModels,
+      'prompted-segmentation',
+      favorites?.['prompted-segmentation'],
+      activeLabelId
+    );
+    if (modelId) setPromptedModel(modelId);
+  }, [
+    policyReady,
+    promptedRouting,
+    activeLabelId,
+    availablePromptedModels,
+    favorites,
+    setPromptedModel,
+  ]);
+
+  // Instance Suggestion model resolution (task default -> favorite/first; label overrides resolve dynamically on exemplar selection)
+  useEffect(() => {
+    if (!policyReady || availableSuggestionModels.length === 0) return;
+    if (suggestionRouting?.binding) {
+      if (isUsableBinding(suggestionRouting)) {
+        const modelId = getModelKey(suggestionRouting.model);
+        if (modelId) setSuggestionModel(modelId);
+      } else {
+        setSuggestionModel(null);
+      }
+      return;
+    }
+
+    const modelId = getFallbackModelId(
+      availableSuggestionModels,
+      'instance-suggestion',
+      favorites?.['instance-suggestion']
+    );
+    if (modelId) setSuggestionModel(modelId);
+  }, [
+    policyReady,
+    suggestionRouting,
+    availableSuggestionModels,
+    favorites,
+    setSuggestionModel,
+  ]);
+
+  // Whole-image Instance Segmentation model resolution (task default -> favorite/first)
+  useEffect(() => {
+    if (!policyReady || availableInstanceModels.length === 0) return;
+    if (instanceRouting?.binding) {
+      if (isUsableBinding(instanceRouting)) {
+        const modelId = getModelKey(instanceRouting.model);
+        if (modelId) setInstanceModel(modelId);
+      } else {
+        setInstanceModel(null);
+      }
+      return;
+    }
+
+    const modelId = getFallbackModelId(
+      availableInstanceModels,
+      'instance-segmentation',
+      favorites?.['instance-segmentation']
+    );
+    if (modelId) setInstanceModel(modelId);
+  }, [
+    policyReady,
+    instanceRouting,
+    availableInstanceModels,
+    favorites,
+    setInstanceModel,
+  ]);
 
   useModelSwitchPreloader(
     promptedModel,
@@ -133,6 +316,7 @@ export default function useAnnotationServices() {
   };
 
   const confirmInstanceRun = (writeMode = 'patch') => {
+    if (!canRunInstance) return;
     setShowInstanceWarning(false);
     setInstanceRunRequested(false);
     setInstanceWarningModalOpen(false);
@@ -151,18 +335,6 @@ export default function useAnnotationServices() {
       isRunning: false,
     },
     {
-      key: 'suggestion',
-      task: 'instance-suggestion',
-      name: 'Instance Suggestion',
-      models: availableSuggestionModels,
-      isLoading: isLoadingSuggestion,
-      selectedModel: suggestionModel,
-      setSelectedModel: setSuggestionModel,
-      isRunning: isRunningSuggestion,
-      usageHint:
-        'Shift-click objects to select exemplars, then right-click any exemplar and choose “Suggest Similar Instances”.',
-    },
-    {
       key: 'instance',
       task: 'instance-segmentation',
       name: 'Instance Segmentation',
@@ -171,12 +343,27 @@ export default function useAnnotationServices() {
       selectedModel: instanceModel,
       setSelectedModel: setInstanceModel,
       isRunning: isRunningInstance,
-      onRun: () => setShowInstanceWarning(true),
+      onRun: canRunInstance ? () => setShowInstanceWarning(true) : undefined,
+    },
+    {
+      key: 'suggestion',
+      task: 'instance-suggestion',
+      name: 'Within-Image Suggestion',
+      models: availableSuggestionModels,
+      isLoading: isLoadingSuggestion,
+      selectedModel: suggestionModel,
+      setSelectedModel: setSuggestionModel,
+      isRunning: isRunningSuggestion,
+      usageHint:
+        'Shift-click objects on canvas to select exemplars, then right-click any exemplar and choose “Suggest Similar Instances”.',
     },
   ];
 
   return {
     services,
+    policy,
+    policyLoading,
+    policyError,
     showInstanceWarning,
     closeInstanceWarning,
     confirmInstanceRun,

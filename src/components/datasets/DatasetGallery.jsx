@@ -140,6 +140,10 @@ const DatasetGallery = () => {
     navigate(`/dataset/${datasetId}/training`);
   };
 
+  const handleModelOrchestrationClick = () => {
+    navigate(`/dataset/${datasetId}/model-orchestration`);
+  };
+
   const handleBatchInferenceClick = () => {
     navigate(`/dataset/${datasetId}/inference`);
   };
@@ -173,6 +177,7 @@ const DatasetGallery = () => {
             onLabelManagementClick={handleLabelManagementClick}
             onExportCocoClick={() => setShowCocoModal(true)}
             onModelTrainingClick={handleModelTrainingClick}
+            onModelOrchestrationClick={handleModelOrchestrationClick}
             onBatchInferenceClick={handleBatchInferenceClick}
             onBrowseAnnotations={handleBrowseAnnotations}
             onManageAccessClick={handleManageAccessClick}

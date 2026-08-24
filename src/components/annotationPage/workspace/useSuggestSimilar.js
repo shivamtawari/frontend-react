@@ -1,14 +1,23 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   useObjectsList,
   useSelectedObjects,
   useSuggestionModel,
+  useAvailableSuggestionModels,
+  useModelFavorites,
   useWebSocketIsReady,
   useIsRunningSuggestion,
 } from '../../../stores/selectors/annotationSelectors';
 import { useSuggestionSegmentation } from '../../../hooks/useSuggestionSegmentation';
+import { useDataset } from '../../../contexts/DatasetContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { hasValidLabel } from '../../../stores/utils/labelValidation';
+import { getInferenceRoutingPolicy } from '../../../api/inference';
+import {
+  isModelCompatibleWithLabel,
+  matchesModelKey,
+  resolveRoutingBinding,
+} from '../../../utils/inferenceRouting';
 
 /**
  * Stable identity for an object's class. Unlabelled objects collapse to one
@@ -19,6 +28,11 @@ const getClassKey = (object) => {
   if (object.labelId != null) return `id:${object.labelId}`;
   return `name:${String(object.label).trim()}`;
 };
+
+const getModelKey = (m) => m?.id || m?.registry_key || m?.identifier || null;
+
+const getPolicyErrorMessage = (error) =>
+  error?.message || 'Failed to load model routing policy';
 
 /**
  * "Suggest similar instances" — an action on the current selection rather than
@@ -32,9 +46,70 @@ export default function useSuggestSimilar() {
   const objectsList = useObjectsList();
   const selectedIds = useSelectedObjects();
   const suggestionModel = useSuggestionModel();
+  const availableModels = useAvailableSuggestionModels();
+  const favorites = useModelFavorites();
   const wsReady = useWebSocketIsReady();
   const isRunning = useIsRunningSuggestion();
+  const { currentDataset } = useDataset();
+  const datasetId = currentDataset?.id;
   const { addToast } = useToast();
+
+  const [policyState, setPolicyState] = useState(() => ({
+    datasetId,
+    status: datasetId != null ? 'loading' : 'idle',
+    policy: null,
+    error: null,
+  }));
+
+  useEffect(() => {
+    let cancelled = false;
+    setPolicyState({
+      datasetId,
+      status: datasetId != null ? 'loading' : 'idle',
+      policy: null,
+      error: null,
+    });
+
+    if (datasetId == null) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getInferenceRoutingPolicy(datasetId)
+      .then((p) => {
+        if (!cancelled) {
+          setPolicyState({ datasetId, status: 'loaded', policy: p || null, error: null });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPolicyState({
+            datasetId,
+            status: 'error',
+            policy: null,
+            error: getPolicyErrorMessage(error),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetId]);
+
+  const policyReady =
+    datasetId != null &&
+    policyState.datasetId === datasetId &&
+    policyState.status === 'loaded';
+  const policyLoading =
+    datasetId != null &&
+    (policyState.datasetId !== datasetId || policyState.status === 'loading');
+  const policyError =
+    policyState.datasetId === datasetId && policyState.status === 'error'
+      ? policyState.error
+      : null;
+  const policy = policyReady ? policyState.policy : null;
 
   const { runSuggestion } = useSuggestionSegmentation(null, (error) =>
     addToast({
@@ -57,23 +132,110 @@ export default function useSuggestSimilar() {
 
   const isHomogeneous = targets.length > 0 && classKeys.size === 1;
   const hasSeeds = contourIds.length === targets.length && contourIds.length > 0;
-  const eligible = isHomogeneous && hasSeeds && !!suggestionModel && wsReady && !isRunning;
+
+  // Determine exemplar shared label if any
+  const sharedLabelId = useMemo(() => {
+    if (!isHomogeneous || targets.length === 0) return null;
+    const first = targets[0];
+    return hasValidLabel(first.label) && first.labelId != null ? Number(first.labelId) : null;
+  }, [isHomogeneous, targets]);
+
+  // Resolve the selected exemplar label. A configured binding is authoritative;
+  // only the absence of a binding permits the personal favorite/first fallback.
+  const routing = useMemo(() => {
+    if (!policyReady || availableModels.length === 0) {
+      return { modelId: null, error: null };
+    }
+
+    const resolved = resolveRoutingBinding(
+      policy,
+      'instance-suggestion',
+      sharedLabelId,
+      availableModels
+    );
+
+    if (resolved?.binding) {
+      if (resolved.isCompatible && !resolved.isStale && resolved.model) {
+        return { modelId: getModelKey(resolved.model), error: null };
+      }
+      return {
+        modelId: null,
+        error: resolved.isStale
+          ? 'The configured suggestion model is no longer available'
+          : 'The configured suggestion model does not support the selected label',
+      };
+    }
+
+    const favoriteKey = favorites?.['instance-suggestion'];
+    const manualSelection = suggestionModel
+      ? availableModels.find((model) =>
+          matchesModelKey(model, 'instance-suggestion', suggestionModel)
+        )
+      : null;
+    const favorite = favoriteKey
+      ? availableModels.find((model) => matchesModelKey(model, 'instance-suggestion', favoriteKey))
+      : null;
+    const compatibleModels = availableModels.filter((model) =>
+      isModelCompatibleWithLabel(model, sharedLabelId)
+    );
+    const fallback =
+      (manualSelection && isModelCompatibleWithLabel(manualSelection, sharedLabelId)
+        ? manualSelection
+        : null) ||
+      (favorite && isModelCompatibleWithLabel(favorite, sharedLabelId) ? favorite : null) ||
+      compatibleModels[0];
+
+    return { modelId: getModelKey(fallback), error: null };
+  }, [policy, policyReady, sharedLabelId, availableModels, favorites, suggestionModel]);
+
+  const resolvedModelId = routing.modelId;
+  const routingError = routing.error;
+
+  const eligible =
+    isHomogeneous &&
+    hasSeeds &&
+    policyReady &&
+    !policyLoading &&
+    !policyError &&
+    !routingError &&
+    !!resolvedModelId &&
+    wsReady &&
+    !isRunning;
 
   const reason = !isHomogeneous
     ? 'Select samples of the same class (or all unlabelled)'
     : !hasSeeds
       ? 'Selected objects are missing contour data'
-      : !suggestionModel
-        ? 'Select an Instance Suggestion model first'
-        : !wsReady
-          ? 'Connection not ready'
-          : null;
+      : !policyReady && policyLoading
+        ? 'Loading model routing policy'
+        : policyError
+          ? `Unable to load model routing policy: ${policyError}`
+          : routingError
+            ? routingError
+            : !resolvedModelId
+              ? 'Select an Instance Suggestion model first'
+              : !wsReady
+                ? 'Connection not ready'
+                : null;
 
   const run = useCallback(async () => {
-    if (!eligible) return;
-    const labelId = targets[0]?.labelId;
-    await runSuggestion(contourIds.length === 1 ? contourIds[0] : contourIds, labelId);
-  }, [eligible, targets, contourIds, runSuggestion]);
+    if (!eligible || !resolvedModelId) return;
+    await runSuggestion(
+      contourIds.length === 1 ? contourIds[0] : contourIds,
+      sharedLabelId,
+      resolvedModelId
+    );
+  }, [eligible, contourIds, sharedLabelId, resolvedModelId, runSuggestion]);
 
-  return { eligible, reason, isRunning, run, seedCount: contourIds.length };
+  return {
+    eligible,
+    reason,
+    isRunning,
+    run,
+    seedCount: contourIds.length,
+    resolvedModelId,
+    policy: policyReady ? policy : null,
+    policyLoading,
+    policyError,
+  };
 }
