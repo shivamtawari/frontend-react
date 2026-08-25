@@ -23,10 +23,9 @@ import {
   normalizeBindingsMap,
   normalizeSelector,
 } from "./orchestration/orchestrationViewModel";
-import RouteCoverage from "./orchestration/RouteCoverage";
-import TaskRail from "./orchestration/TaskRail";
-import TaskWorkspace from "./orchestration/TaskWorkspace";
-import ConfigureRouteModal from "./orchestration/ConfigureRouteModal";
+import MatrixTopSummary from "./orchestration/matrix/MatrixTopSummary";
+import MatrixGrid from "./orchestration/matrix/MatrixGrid";
+import MatrixSideDrawer from "./orchestration/matrix/MatrixSideDrawer";
 import RoutingSaveBar from "./orchestration/RoutingSaveBar";
 
 /**
@@ -50,10 +49,10 @@ export const modelsForTaskAndLabel = (models, task, labelId = null) => {
 };
 
 /**
- * ModelOrchestrationPanel Coordinator
+ * ModelOrchestrationPanel Coordinator (Design B)
  *
- * Coordinates draft state, category/task selection, coverage computations,
- * and routing desk components.
+ * Coordinates draft state, matrix grid view, right slide-over drawers,
+ * and bottom save bar.
  */
 export default function ModelOrchestrationPanel({
   datasetId,
@@ -74,12 +73,8 @@ export default function ModelOrchestrationPanel({
   const [draftBindings, setDraftBindings] = useState([]);
   const [statusMessage, setStatusMessage] = useState(null);
 
-  // Active navigation selections
-  const [selectedCategory, setSelectedCategory] = useState("interactive");
-  const [selectedInteractiveTask, setSelectedInteractiveTask] = useState("prompted-segmentation");
-
-  // Route modal target for Phase 3 (temporary holder)
-  const [routeModalTarget, setRouteModalTarget] = useState(null);
+  // Active drawer target { task, labelId }
+  const [drawerTarget, setDrawerTarget] = useState(null);
 
   // Sync draft bindings when policy changes (e.g. initial load or dataset switch)
   useEffect(() => {
@@ -106,13 +101,6 @@ export default function ModelOrchestrationPanel({
     [policyDiff, labelsById, catalog]
   );
 
-  const activeCategoryObj = useMemo(
-    () =>
-      ORCHESTRATION_CATEGORIES.find((c) => c.key === selectedCategory) ||
-      ORCHESTRATION_CATEGORIES[0],
-    [selectedCategory]
-  );
-
   const handleUpdateBinding = (task, labelId, newBinding) => {
     setDraftBindings((prev) => {
       const filtered = prev.filter(
@@ -130,11 +118,6 @@ export default function ModelOrchestrationPanel({
       return filtered;
     });
     setStatusMessage(null);
-  };
-
-  const handleConfigureRoute = (task, labelId) => {
-    // In Phase 2, this records target. In Phase 3, it opens the ConfigureRouteModal.
-    setRouteModalTarget({ task, labelId });
   };
 
   const handleSave = async () => {
@@ -185,29 +168,20 @@ export default function ModelOrchestrationPanel({
   }, [draftBindings]);
 
   return (
-    <div className="space-y-4" data-testid="model-orchestration-desk">
-      {/* 1. Route Coverage Strip */}
-      <RouteCoverage coverage={coverage} />
+    <div className="space-y-6" data-testid="model-orchestration-desk">
+      {/* 1. Top 3 Category Summary Cards */}
+      <MatrixTopSummary coverage={coverage} />
 
-      {/* 2. Main Desk: Left Rail + Right Workspace */}
-      <div className="flex flex-col lg:flex-row items-start gap-4">
-        <TaskRail
-          selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
-          coverage={coverage}
-        />
-
-        <TaskWorkspace
-          category={activeCategoryObj}
-          selectedInteractiveTask={selectedInteractiveTask}
-          onSelectInteractiveTask={setSelectedInteractiveTask}
-          draftBindings={draftBindings}
-          labelsById={labelsById}
-          catalog={catalog}
-          onConfigure={handleConfigureRoute}
-          canEdit={canEdit && !isSaving && !isDeleting}
-        />
-      </div>
+      {/* 2. Main Matrix Grid */}
+      <MatrixGrid
+        labelsById={labelsById}
+        catalog={catalog}
+        draftBindings={draftBindings}
+        onSelectCell={(taskKey, targetLabelId) => {
+          setDrawerTarget({ task: taskKey, labelId: targetLabelId });
+        }}
+        canEdit={canEdit && !isSaving && !isDeleting}
+      />
 
       {/* Batch Application Toolbar (when onApplyToBatch is passed) */}
       {onApplyToBatch && batchEligibleCount > 0 && (
@@ -247,7 +221,7 @@ export default function ModelOrchestrationPanel({
         </div>
       )}
 
-      {/* 3. Edge-aligned Routing Save Bar */}
+      {/* 3. Bottom Routing Save Bar */}
       <RoutingSaveBar
         hasUnsavedChanges={hasUnsavedChanges}
         changeSummary={changeSummary}
@@ -261,26 +235,25 @@ export default function ModelOrchestrationPanel({
         statusMessage={statusMessage}
       />
 
-      {/* 4. Configure Route Modal */}
-      {routeModalTarget && (
-        <ConfigureRouteModal
-          isOpen={Boolean(routeModalTarget)}
-          onClose={() => setRouteModalTarget(null)}
-          target={routeModalTarget}
-          labelsById={labelsById}
-          catalog={catalog}
-          draftBindings={draftBindings}
-          onSaveRoute={(taskKey, targetLabelId, newBinding) => {
-            handleUpdateBinding(taskKey, targetLabelId, newBinding);
-            setRouteModalTarget(null);
-          }}
-          onUnbindRoute={(taskKey, targetLabelId) => {
-            handleUpdateBinding(taskKey, targetLabelId, null);
-            setRouteModalTarget(null);
-          }}
-          canEdit={canEdit && !isSaving && !isDeleting}
-        />
-      )}
+      {/* 4. Slide-over Model & Inputs Drawer */}
+      <MatrixSideDrawer
+        isOpen={Boolean(drawerTarget)}
+        onClose={() => setDrawerTarget(null)}
+        target={drawerTarget}
+        labelsById={labelsById}
+        catalog={catalog}
+        draftBindings={draftBindings}
+        onSaveRoute={(taskKey, targetLabelId, newBinding) => {
+          handleUpdateBinding(taskKey, targetLabelId, newBinding);
+          setDrawerTarget(null);
+        }}
+        onUnbindRoute={(taskKey, targetLabelId) => {
+          handleUpdateBinding(taskKey, targetLabelId, null);
+          setDrawerTarget(null);
+        }}
+        canEdit={canEdit && !isSaving && !isDeleting}
+      />
     </div>
   );
 }
+

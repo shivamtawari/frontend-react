@@ -179,24 +179,20 @@ export default function ModelOrchestrationPage() {
                                 Model Orchestration
                             </h1>
                             <p className="text-xs text-t3 mt-0.5 line-clamp-1">
-                                Which model annotates what. These routes are the canonical defaults for canvas tools, in-image suggestions and batch runs.
+                                One cell per task and label. Filled cells are bound routes; dashed cells fall through to the task default.
                             </p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-5 shrink-0">
-                        {/* Last saved metadata block */}
+                        {/* Bound stats block */}
                         <div className="text-right hidden sm:block">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-t3">
-                                LAST SAVED
+                                BOUND
                             </div>
-                            {policy?.updated_at ? (
-                                <div className="text-xs text-t2 font-medium">
-                                    <span className="text-t1 font-semibold">{policy.updated_by || "admin"}</span> · {formatSavedDate(policy.updated_at)}
-                                </div>
-                            ) : (
-                                <div className="text-xs text-t3 font-normal">Not saved yet</div>
-                            )}
+                            <div className="text-sm font-bold text-t1 font-mono">
+                                {policy?.bindings?.length || 0} / {(Object.keys(labelsById).length + 1) * 3}
+                            </div>
                         </div>
 
                         <button

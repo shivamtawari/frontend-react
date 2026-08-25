@@ -50,6 +50,7 @@ export default function RoutingSaveBar({
   return (
     <aside
       aria-label="Routing policy save bar"
+      data-testid="routing-save-bar"
       className={`w-full rounded-2xl border border-slate-800 bg-[#151b23] transition-all mt-6 shadow-xs ${
         hasUnsavedChanges ? "py-3 px-6 ring-1 ring-amber-500/20 shadow-md" : "py-2.5 px-6"
       } ${className}`}
