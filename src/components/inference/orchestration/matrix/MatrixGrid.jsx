@@ -55,7 +55,7 @@ export default function MatrixGrid({
       label: "Interactive segmentation",
       subtitle: "Canvas prompts and within-image suggestions",
       dotColor: "text-teal-400",
-      accentBorder: "border-teal-500/40 bg-teal-950/20 hover:border-teal-400/70",
+      accentBorder: "border-teal-500/60 bg-[#101e23] hover:border-teal-400 hover:bg-[#13262d]",
       dotHex: "#2dd4bf",
     },
     {
@@ -64,7 +64,7 @@ export default function MatrixGrid({
       label: "Instance segmentation",
       subtitle: "Batch, whole dataset",
       dotColor: "text-amber-400",
-      accentBorder: "border-amber-500/40 bg-amber-950/20 hover:border-amber-400/70",
+      accentBorder: "border-amber-500/60 bg-[#1f1912] hover:border-amber-400 hover:bg-[#271f16]",
       dotHex: "#fbbf24",
     },
     {
@@ -73,7 +73,7 @@ export default function MatrixGrid({
       label: "Cross-image suggestion",
       subtitle: "Retrieve exemplars across images",
       dotColor: "text-purple-400",
-      accentBorder: "border-purple-500/40 bg-purple-950/20 hover:border-purple-400/70",
+      accentBorder: "border-purple-500/60 bg-[#1c1524] hover:border-purple-400 hover:bg-[#231a2e]",
       dotHex: "#c084fc",
     },
   ];
@@ -122,16 +122,16 @@ export default function MatrixGrid({
         type="button"
         onClick={handleClick}
         disabled={!canEdit}
-        className={`w-full text-left p-3 rounded-xl transition-all cursor-pointer group flex items-start justify-between gap-2 min-h-[64px] ${
+        className={`w-full text-left p-3.5 rounded-xl transition-all cursor-pointer group flex items-start justify-between gap-2 min-h-[66px] ${
           isStale
             ? "border border-amber-400/80 bg-amber-500/10 ring-1 ring-amber-400/30"
             : isExplicit
-            ? `border ${col.accentBorder} shadow-xs`
+            ? `border ${col.accentBorder} shadow-2xs`
             : isInherited
-            ? "border border-dashed border-slate-800 bg-[#121721]/50 hover:bg-[#121721] hover:border-slate-700"
+            ? "border border-dashed border-slate-700/80 bg-[#121822] hover:bg-[#161e2b] hover:border-slate-600"
             : isDefault
-            ? "border border-dashed border-slate-800 bg-[#121721]/30 hover:bg-[#121721]/60 hover:border-slate-700 text-t3"
-            : "border border-dashed border-slate-800 bg-[#121721]/30 hover:bg-[#121721]/60 hover:border-slate-700 text-t3"
+            ? "border border-dashed border-slate-800 bg-[#0e131b] hover:bg-[#121822] hover:border-slate-700 text-t3"
+            : "border border-dashed border-slate-800 bg-[#0e131b] hover:bg-[#121822] hover:border-slate-700 text-t3"
         }`}
         data-testid={`matrix-cell-${col.task}-${labelId ?? "default"}`}
       >
@@ -142,12 +142,12 @@ export default function MatrixGrid({
             ) : isExplicit ? (
               <span className={`text-[9px] ${col.dotColor} shrink-0`}>●</span>
             ) : (
-              <span className="text-[9px] text-t3/40 shrink-0">●</span>
+              <span className="text-[9px] text-t3/50 shrink-0">●</span>
             )}
 
             <span
               className={`text-xs font-semibold truncate ${
-                isExplicit ? "text-t1" : "text-t3 group-hover:text-t2"
+                isExplicit ? "text-t1" : isInherited ? "text-t2 group-hover:text-t1" : "text-t3 group-hover:text-t2"
               }`}
             >
               {isExplicit && model
@@ -178,7 +178,7 @@ export default function MatrixGrid({
 
   return (
     <div
-      className={`rounded-2xl border border-slate-800/80 bg-[#0f141d] p-5 space-y-4 shadow-sm ${className}`}
+      className={`rounded-2xl border border-slate-800/80 bg-[#0b0f17] p-5 space-y-4 shadow-sm ${className}`}
       data-testid="matrix-grid"
     >
       {/* Matrix Header Row */}
@@ -226,21 +226,22 @@ export default function MatrixGrid({
         return (
           <div
             key={l.id}
-            className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center py-1.5 border-t border-slate-800/40"
+            className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center py-2 border-t border-slate-800/40"
           >
-            {/* Label Column with tree indentation */}
+            {/* Label Column with elegant curved tree connector */}
             <div
               className="px-1 min-w-0"
-              style={{ paddingLeft: `${l.depth * 20 + 4}px` }}
+              style={{ paddingLeft: `${l.depth * 22 + 4}px` }}
             >
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="relative flex items-center gap-2 min-w-0">
                 {l.depth > 0 && (
-                  <span className="text-slate-600 font-mono text-xs select-none">
-                    └─
-                  </span>
+                  <div
+                    className="absolute -left-3.5 -top-3 w-3 h-5.5 border-l-2 border-b-2 border-slate-700/80 rounded-bl-md pointer-events-none"
+                    aria-hidden="true"
+                  />
                 )}
                 <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10"
                   style={{ backgroundColor: l.color || "#2dd4bf" }}
                 />
                 <span className="text-xs font-semibold text-t1 truncate">
@@ -248,8 +249,7 @@ export default function MatrixGrid({
                 </span>
               </div>
               <p
-                className="text-[10px] text-t3 truncate mt-0.5"
-                style={{ paddingLeft: l.depth > 0 ? "28px" : "18px" }}
+                className="text-[10px] text-t3 truncate mt-0.5 pl-4.5"
               >
                 {levelText}
               </p>
