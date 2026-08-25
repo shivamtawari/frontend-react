@@ -195,4 +195,20 @@ describe("DynamicHyperParameter", () => {
 
     expect(screen.getAllByText("Initial learning rate for optimizer")).toHaveLength(2);
   });
+
+  it("disables input controls when disabled is true", () => {
+    const param = {
+      key: "threshold",
+      label: "Score Threshold",
+      type: "float",
+      min_value: 0.0,
+      max_value: 1.0,
+      default_value: 0.5,
+    };
+
+    render(<DynamicHyperParameter param={param} value={0.5} onChange={jest.fn()} disabled={true} />);
+
+    const slider = screen.getByRole("slider", { name: /score threshold/i });
+    expect(slider).toBeDisabled();
+  });
 });

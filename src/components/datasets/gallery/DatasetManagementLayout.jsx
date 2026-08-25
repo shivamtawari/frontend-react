@@ -21,8 +21,15 @@ import { useDatasetGalleryData } from "../../../hooks/useDatasetGalleryData";
  * @param {Object} props
  * @param {React.ReactNode} props.children - Content to display in the main area
  * @param {string|number} [props.datasetId] - Optional dataset ID (if not in URL params)
+ * @param {boolean} [props.showSidebar=true] - Whether to show persistent Dataset Info sidebar
+ * @param {string} [props.headerDensity="default"] - Header density ("default" | "compact")
  */
-const DatasetManagementLayout = ({ children, datasetId: propDatasetId }) => {
+const DatasetManagementLayout = ({
+  children,
+  datasetId: propDatasetId,
+  showSidebar = true,
+  headerDensity = "default",
+}) => {
   const { datasetId: paramDatasetId } = useParams();
   const navigate = useNavigate();
   const { loading } = useDataset();
@@ -86,23 +93,26 @@ const DatasetManagementLayout = ({ children, datasetId: propDatasetId }) => {
       <SmallScreenMessage />
 
       {/* Large Screen Content - Show dataset management layout on screens 1024px and above */}
-      <div className="hidden lg:block">
+      <div className="hidden lg:flex lg:flex-col lg:h-screen">
         <DatasetGalleryHeader 
           datasetName={dataset.name}
           onStartAnnotation={handleStartAnnotation}
+          density={headerDensity}
         />
 
         {/* Main Content */}
-        <div className="max-w-full mx-auto flex h-[calc(100vh-73px)]">
-          {/* Left Sidebar - Dataset Info (Persistent across all views) */}
-          <div className="w-100 bg-p1 border-r border-ln flex-shrink-0">
-            <DatasetInfo
-              dataset={dataset}
-              labels={labels}
-              onStartAnnotation={handleStartAnnotation}
-              onLabelsUpdated={handleLabelsUpdated}
-            />
-          </div>
+        <div className="max-w-full mx-auto flex flex-1 min-h-0 w-full">
+          {/* Left Sidebar - Dataset Info (Persistent across all views when enabled) */}
+          {showSidebar && (
+            <div className="w-100 bg-p1 border-r border-ln flex-shrink-0">
+              <DatasetInfo
+                dataset={dataset}
+                labels={labels}
+                onStartAnnotation={handleStartAnnotation}
+                onLabelsUpdated={handleLabelsUpdated}
+              />
+            </div>
+          )}
 
           {/* Center - Dynamic Content (Children) */}
           <div className="flex-1 overflow-hidden">

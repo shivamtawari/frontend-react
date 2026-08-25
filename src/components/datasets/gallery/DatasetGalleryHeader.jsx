@@ -7,48 +7,49 @@ import ReportBugLink from '../../ui/ReportBugLink';
 import ThemeToggle from '../../ui/ThemeToggle';
 import Wordmark from '../../Wordmark';
 
-const DatasetGalleryHeader = ({ datasetName, onStartAnnotation }) => {
+const DatasetGalleryHeader = ({ datasetName, onStartAnnotation, density = "default" }) => {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
+  const isCompact = density === "compact";
 
   return (
     <nav className="bg-p1 text-t1 border-b border-ln sticky top-0 z-50">
-      <div className="max-w-full mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className={`max-w-full mx-auto px-4 ${isCompact ? "py-1.5" : "py-3"} flex items-center justify-between`}>
+        <div className={`flex items-center ${isCompact ? "space-x-3" : "space-x-4"}`}>
           <button
             onClick={() => navigate("/datasets")}
-            className="flex items-center space-x-2 hover:text-ac transition-colors duration-150"
+            className={`flex items-center ${isCompact ? "space-x-1.5 text-xs text-t2" : "space-x-2"} hover:text-ac transition-colors duration-150`}
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={isCompact ? 16 : 20} />
             <span>Back to Datasets</span>
           </button>
-          <div className="h-6 w-px bg-ln"></div>
+          <div className={`${isCompact ? "h-4" : "h-6"} w-px bg-ln`}></div>
           <h1 
-            className="text-2xl font-bold cursor-pointer hover:text-ac transition-colors duration-150"
+            className={`${isCompact ? "text-xl" : "text-2xl"} font-bold cursor-pointer hover:text-ac transition-colors duration-150`}
             onClick={() => navigate('/')}
           >
             <Wordmark />
           </h1>
-          <div className="h-6 w-px bg-ln"></div>
-          <span className="text-lg font-medium">{datasetName}</span>
+          <div className={`${isCompact ? "h-4" : "h-6"} w-px bg-ln`}></div>
+          <span className={`${isCompact ? "text-sm text-t2" : "text-lg"} font-medium`}>{datasetName}</span>
         </div>
 
-        <div className="flex items-center space-x-4">
+        <div className={`flex items-center ${isCompact ? "space-x-3" : "space-x-4"}`}>
           {isAuthenticated && user && (
-            <div className="flex items-center space-x-2 px-3 py-1.5 text-sm text-t3">
-              <User className="w-4 h-4" />
+            <div className={`flex items-center ${isCompact ? "space-x-1.5 px-2 py-1 text-xs" : "space-x-2 px-3 py-1.5 text-sm"} text-t3`}>
+              <User className={isCompact ? "w-3.5 h-3.5" : "w-4 h-4"} />
               <span className="font-medium">{user.username}</span>
             </div>
           )}
           <button
             onClick={() => navigate("/docs")}
-            className="flex items-center space-x-2 bg-hv hover:bg-hv2 text-t2 hover:text-t1 py-2 px-4 rounded-lg transition-colors"
+            className={`flex items-center ${isCompact ? "space-x-1.5 py-1 px-3 rounded-md text-xs" : "space-x-2 py-2 px-4 rounded-lg"} bg-hv hover:bg-hv2 text-t2 hover:text-t1 transition-colors`}
           >
-            <BookOpen className="w-4 h-4" />
+            <BookOpen className={isCompact ? "w-3.5 h-3.5" : "w-4 h-4"} />
             <span>Documentation</span>
           </button>
           <ThemeToggle />
-          <ReportBugLink />
+          <ReportBugLink variant="default" />
           
           <AuthButtons showLogoutOnly={true} />
         </div>

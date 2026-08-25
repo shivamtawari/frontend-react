@@ -140,53 +140,80 @@ export default function ModelOrchestrationPage() {
         }
     };
 
+    const formatSavedDate = (dateStr) => {
+        if (!dateStr) return null;
+        try {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " +
+                   d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+        } catch {
+            return dateStr;
+        }
+    };
+
     return (
-        <DatasetManagementLayout>
-            <div className="flex flex-col h-full bg-well min-h-0 overflow-hidden">
+        <DatasetManagementLayout showSidebar={false} headerDensity="compact">
+            <div className="flex flex-col h-full bg-app min-h-0 overflow-hidden">
                 {/* Header */}
-                <header className="p-4 px-6 border-b border-ln bg-p1 flex items-center justify-between flex-shrink-0">
-                    <div className="flex items-center gap-3">
-                        <Link
-                            to={`/dataset/${datasetId}/datamanagement`}
-                            className="p-1.5 rounded-xl border border-ln bg-p1 text-t2 hover:bg-hv hover:text-t1 transition"
-                            title="Back to Dataset Management"
-                            aria-label="Back to Dataset Management"
-                        >
-                            <ArrowLeft size={16} />
-                        </Link>
-                        <div>
-                            <h1 className="text-base font-semibold text-t1 flex items-center gap-2">
-                                <Cpu size={18} className="text-ac" />
-                                <span>Model Orchestration</span>
-                                {currentDataset?.name && (
-                                    <span className="text-xs font-normal text-t3">
-                                        — {currentDataset.name}
-                                    </span>
-                                )}
+                <header className="py-4 px-6 border-b border-ln bg-p1 flex flex-wrap items-center justify-between gap-4 flex-shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 shrink-0">
+                            <Cpu size={22} />
+                        </div>
+
+                        <div className="min-w-0">
+                            {/* Breadcrumb */}
+                            <div className="flex items-center gap-1.5 text-xs text-t3 mb-0.5">
+                                <span className="text-t2 font-medium truncate">
+                                    {currentDataset?.name || `Dataset #${datasetId}`}
+                                </span>
+                                <span>&gt;</span>
+                                <Link
+                                    to={`/dataset/${datasetId}/datamanagement`}
+                                    className="hover:text-t1 transition hover:underline"
+                                >
+                                    Dataset Management
+                                </Link>
+                            </div>
+                            <h1 className="text-xl font-bold text-t1 leading-tight">
+                                Model Orchestration
                             </h1>
-                            <p className="text-xs text-t3">
-                                Configure default models and per-label routing policies for interactive tools, cross-image suggestions, and batch runs.
+                            <p className="text-xs text-t3 mt-0.5 line-clamp-1">
+                                Which model annotates what. These routes are the canonical defaults for canvas tools, in-image suggestions and batch runs.
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-5 shrink-0">
+                        {/* Last saved metadata block */}
+                        <div className="text-right hidden sm:block">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-t3">
+                                LAST SAVED
+                            </div>
+                            {policy?.updated_at ? (
+                                <div className="text-xs text-t2 font-medium">
+                                    <span className="text-t1 font-semibold">{policy.updated_by || "admin"}</span> · {formatSavedDate(policy.updated_at)}
+                                </div>
+                            ) : (
+                                <div className="text-xs text-t3 font-normal">Not saved yet</div>
+                            )}
+                        </div>
+
                         <button
                             type="button"
                             onClick={() => navigate(`/dataset/${datasetId}/datamanagement`)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium border border-ln rounded-xl bg-p1 text-t1 hover:bg-hv transition"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-ln rounded-lg bg-well/40 text-t2 hover:text-t1 hover:bg-well transition shadow-2xs"
                         >
-                            <ArrowLeft size={13} />
                             <span>Dataset Management</span>
                         </button>
                     </div>
                 </header>
 
                 {/* Main Content Area */}
-                <main className="flex-1 overflow-y-auto p-6">
+                <main className="flex-1 overflow-y-auto p-6 pb-24">
                     {error && (
-                        <div className="mb-6 p-4 bg-errBg border border-errLn rounded-2xl text-sm text-err flex items-center gap-2 max-w-4xl">
-                            <AlertTriangle size={16} />
+                        <div className="mb-4 p-3.5 bg-errBg border border-errLn rounded-xl text-xs text-err flex items-center gap-2 w-full">
+                            <AlertTriangle size={15} className="shrink-0" />
                             <span>{error}</span>
                         </div>
                     )}
@@ -197,7 +224,7 @@ export default function ModelOrchestrationPage() {
                             <span>Loading dataset models, routing policy, and labels…</span>
                         </div>
                     ) : !canView ? (
-                        <div className="max-w-4xl p-6 bg-p1 border border-ln rounded-3xl text-center space-y-3">
+                        <div className="max-w-4xl mx-auto p-6 bg-p1 border border-ln rounded-3xl text-center space-y-3">
                             <h2 className="text-sm font-semibold text-t1">Access Restricted</h2>
                             <p className="text-xs text-t3">
                                 You do not have permission to view or configure model orchestration for this dataset.
@@ -212,21 +239,17 @@ export default function ModelOrchestrationPage() {
                             </button>
                         </div>
                     ) : (
-                        <div className="max-w-4xl">
-                            <section className="border border-ln rounded-3xl bg-p1 p-6 shadow-xs">
-                                <ModelOrchestrationPanel
-                                    datasetId={Number(datasetId)}
-                                    policy={policy}
-                                    labelsById={labelsById}
-                                    catalog={catalog}
-                                    onSavePolicy={handleSavePolicy}
-                                    onDeletePolicy={handleDeletePolicy}
-                                    isSaving={isSaving}
-                                    isDeleting={isDeleting}
-                                    canEdit={canEdit}
-                                />
-                            </section>
-                        </div>
+                        <ModelOrchestrationPanel
+                            datasetId={Number(datasetId)}
+                            policy={policy}
+                            labelsById={labelsById}
+                            catalog={catalog}
+                            onSavePolicy={handleSavePolicy}
+                            onDeletePolicy={handleDeletePolicy}
+                            isSaving={isSaving}
+                            isDeleting={isDeleting}
+                            canEdit={canEdit}
+                        />
                     )}
                 </main>
             </div>
