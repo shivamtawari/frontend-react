@@ -526,7 +526,7 @@ class AnnotationSession {
    * @param {number|null} labelId - Optional label ID to assign to found instances
    * @returns {Promise<Object>} Response with added objects (objects are added via OBJECT_ADDED WebSocket messages)
    */
-  async runSuggestion(seedContourIds, modelKey, labelId = null) {
+  async runSuggestion(seedContourIds, modelKey, labelId = null, inputs = null) {
     this._ensureReady();
     
     // Check if suggestion service is available
@@ -534,7 +534,7 @@ class AnnotationSession {
       throw new Error('Suggestion segmentation service is not available. Please check your connection.');
     }
     
-    const message = MessageBuilders.runSuggestion(seedContourIds, modelKey, labelId);
+    const message = MessageBuilders.runSuggestion(seedContourIds, modelKey, labelId, inputs);
     return websocketService.send(message, true);
   }
 

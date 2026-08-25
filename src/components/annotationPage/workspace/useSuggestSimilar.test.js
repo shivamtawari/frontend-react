@@ -88,7 +88,55 @@ describe("useSuggestSimilar dynamic exemplar routing", () => {
       await result.current.run();
     });
 
-    expect(mockRunSuggestion).toHaveBeenCalledWith([101, 102], 2, "polyp-specialist");
+    expect(mockRunSuggestion).toHaveBeenCalledWith([101, 102], 2, "polyp-specialist", null);
+  });
+
+  it("forwards saved route parameters and conditioning inputs to suggestion runner", async () => {
+    getInferenceRoutingPolicy.mockResolvedValueOnce({
+      dataset_id: 101,
+      bindings: [
+        {
+          task: "instance-suggestion",
+          label_id: 2,
+          model_registry_key: "polyp-specialist",
+          inputs: {
+            parameters: {
+              mask_threshold: 0.8,
+              min_mask_area: 120,
+            },
+            conditioning: {
+              count: 3,
+            },
+          },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useSuggestSimilar());
+
+    await waitFor(() => {
+      expect(result.current.eligible).toBe(true);
+      expect(result.current.resolvedModelId).toBe("polyp-specialist");
+    });
+
+    await act(async () => {
+      await result.current.run();
+    });
+
+    expect(mockRunSuggestion).toHaveBeenCalledWith(
+      [101, 102],
+      2,
+      "polyp-specialist",
+      {
+        parameters: {
+          mask_threshold: 0.8,
+          min_mask_area: 120,
+        },
+        conditioning: {
+          count: 3,
+        },
+      }
+    );
   });
 
   it("uses task default routing when selected exemplars are unlabelled", async () => {
@@ -121,7 +169,7 @@ describe("useSuggestSimilar dynamic exemplar routing", () => {
       await result.current.run();
     });
 
-    expect(mockRunSuggestion).toHaveBeenCalledWith(104, null, "sam3-default");
+    expect(mockRunSuggestion).toHaveBeenCalledWith(104, null, "sam3-default", null);
   });
 
   it("stays disabled while the dataset policy is loading", async () => {

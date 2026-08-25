@@ -47,13 +47,30 @@ describe('useSuggestionSegmentation model override', () => {
     expect(annotationSession.runSuggestion).toHaveBeenCalledWith(
       [11, 12],
       'routed-specialist',
-      2
+      2,
+      null
     );
     expect(addToast).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'info',
         message: expect.stringContaining('Routed Specialist'),
       })
+    );
+  });
+
+  it('forwards inputs to annotationSession.runSuggestion', async () => {
+    const { result } = renderHook(() => useSuggestionSegmentation());
+    const inputs = { parameters: { mask_threshold: 0.75 } };
+
+    await act(async () => {
+      await result.current.runSuggestion([11], 2, 'routed-specialist', inputs);
+    });
+
+    expect(annotationSession.runSuggestion).toHaveBeenCalledWith(
+      [11],
+      'routed-specialist',
+      2,
+      inputs
     );
   });
 });

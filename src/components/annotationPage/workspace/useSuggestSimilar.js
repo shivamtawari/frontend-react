@@ -144,7 +144,7 @@ export default function useSuggestSimilar() {
   // only the absence of a binding permits the personal favorite/first fallback.
   const routing = useMemo(() => {
     if (!policyReady || availableModels.length === 0) {
-      return { modelId: null, error: null };
+      return { modelId: null, inputs: null, error: null };
     }
 
     const resolved = resolveRoutingBinding(
@@ -156,10 +156,15 @@ export default function useSuggestSimilar() {
 
     if (resolved?.binding) {
       if (resolved.isCompatible && !resolved.isStale && resolved.model) {
-        return { modelId: getModelKey(resolved.model), error: null };
+        return {
+          modelId: getModelKey(resolved.model),
+          inputs: resolved.binding.inputs || null,
+          error: null,
+        };
       }
       return {
         modelId: null,
+        inputs: null,
         error: resolved.isStale
           ? 'The configured suggestion model is no longer available'
           : 'The configured suggestion model does not support the selected label',
@@ -185,10 +190,11 @@ export default function useSuggestSimilar() {
       (favorite && isModelCompatibleWithLabel(favorite, sharedLabelId) ? favorite : null) ||
       compatibleModels[0];
 
-    return { modelId: getModelKey(fallback), error: null };
+    return { modelId: getModelKey(fallback), inputs: null, error: null };
   }, [policy, policyReady, sharedLabelId, availableModels, favorites, suggestionModel]);
 
   const resolvedModelId = routing.modelId;
+  const resolvedInputs = routing.inputs;
   const routingError = routing.error;
 
   const eligible =
@@ -223,9 +229,10 @@ export default function useSuggestSimilar() {
     await runSuggestion(
       contourIds.length === 1 ? contourIds[0] : contourIds,
       sharedLabelId,
-      resolvedModelId
+      resolvedModelId,
+      resolvedInputs
     );
-  }, [eligible, contourIds, sharedLabelId, resolvedModelId, runSuggestion]);
+  }, [eligible, contourIds, sharedLabelId, resolvedModelId, resolvedInputs, runSuggestion]);
 
   return {
     eligible,

@@ -277,12 +277,13 @@ export const MessageBuilders = {
    * @param {string} modelKey - Suggestion model key (e.g., 'DINOv3')
    * @param {number|null} labelId - Optional label ID to assign to found instances
    */
-  runSuggestion: (seedContourIds, modelKey, labelId = null) => createMessage(
+  runSuggestion: (seedContourIds, modelKey, labelId = null, inputs = null) => createMessage(
     CLIENT_MESSAGE_TYPES.SUGGESTION_INFERENCE,
     {
       seed_contour_ids: seedContourIds,
       model_key: modelKey,
       label_id: labelId,
+      ...(inputs && typeof inputs === "object" ? { inputs } : {}),
     }
   ),
 

@@ -24,7 +24,7 @@ export function useSuggestionSegmentation(onSuccess, onError) {
   const availableModels = useAvailableSuggestionModels();
   const { addToast } = useToast();
 
-  const runSuggestion = useCallback(async (contourIdOrIds, labelId, modelIdOverride = null) => {
+  const runSuggestion = useCallback(async (contourIdOrIds, labelId, modelIdOverride = null, inputs = null) => {
     // Note: Model status is handled by the backend, no need to update here
     
     // Normalize to array
@@ -69,7 +69,8 @@ export function useSuggestionSegmentation(onSuccess, onError) {
       const response = await annotationSession.runSuggestion(
         contourIds,         // Array of seed contour IDs (can be single or multiple)
         effectiveModelId,   // Model identifier (string)
-        labelId             // Label ID
+        labelId,            // Label ID
+        inputs              // Saved inputs from route policy (conditioning and parameters)
       );
       
       // Note: Model status is handled by the backend, no need to update here

@@ -678,15 +678,15 @@ describe("ConfigureRouteModal", () => {
     );
   });
 
-  it("does not show contradictory default message when retrieval strategy is missing", () => {
+  it("does not show contradictory default message when retrieval strategy is missing for cross-image", () => {
     const retrievalModel = {
       registry_key: "retrieval-seg",
       name: "Retrieval Seg",
-      task: "instance-segmentation",
+      task: "cross-image-suggestion",
       label_ids: [],
       input_contract: {
         schema_version: 1,
-        task: "instance-segmentation",
+        task: "cross-image-suggestion",
         conditioning: {
           kind: "reference_images",
         },
@@ -698,7 +698,7 @@ describe("ConfigureRouteModal", () => {
       <ConfigureRouteModal
         isOpen={true}
         onClose={vi.fn()}
-        target={{ task: "instance-segmentation", labelId: null }}
+        target={{ task: "cross-image-suggestion", labelId: null }}
         labelsById={labelsById}
         catalog={{ models: [retrievalModel], retrieval_strategies: [] }}
         draftBindings={[]}
@@ -717,5 +717,119 @@ describe("ConfigureRouteModal", () => {
     expect(
       screen.queryByText(/This model operates with its default runtime parameters and requires no additional input configuration/)
     ).not.toBeInTheDocument();
+  });
+
+  it("disambiguates multi-task models by task when initializing existing bindings", () => {
+    const multiTaskModels = [
+      {
+        registry_key: "sam3-universal",
+        name: "SAM 3 (Prompted)",
+        task: "prompted-segmentation",
+        label_ids: [],
+        input_contract: {
+          schema_version: 1,
+          task: "prompted-segmentation",
+          conditioning: { kind: "none", user_selectable_count: false },
+          parameters: [],
+        },
+      },
+      {
+        registry_key: "sam3-universal",
+        name: "SAM 3 (Within-Image)",
+        task: "within-image-suggestion",
+        label_ids: [],
+        input_contract: {
+          schema_version: 1,
+          task: "within-image-suggestion",
+          conditioning: { kind: "instances", user_selectable_count: true, min_units: 1, max_units: 10 },
+          parameters: [
+            {
+              key: "mask_threshold",
+              label: "Mask Threshold",
+              type: "float",
+              default_value: 0.7,
+            },
+          ],
+        },
+      },
+    ];
+
+    const draftBindings = [
+      {
+        task: "within-image-suggestion",
+        label_id: 1,
+        model_registry_key: "sam3-universal",
+        inputs: {
+          parameters: { mask_threshold: 0.85 },
+        },
+      },
+    ];
+
+    render(
+      <ConfigureRouteModal
+        isOpen={true}
+        onClose={vi.fn()}
+        target={{ task: "within-image-suggestion", labelId: 1 }}
+        labelsById={labelsById}
+        catalog={{ models: multiTaskModels, retrieval_strategies: [] }}
+        draftBindings={draftBindings}
+        canEdit={true}
+      />
+    );
+
+    // Verifies it matched the within-image contract and rendered the mask_threshold parameter input
+    expect(screen.getByLabelText(/Mask Threshold/i)).toHaveValue(0.85);
+    expect(screen.getByText(/Instances count|Exemplars count/i)).toBeInTheDocument();
+  });
+
+  it("permits saving within-image suggestion models when no retrieval strategies exist", () => {
+    const withinImageModel = {
+      registry_key: "sam3-within",
+      name: "SAM 3 Within-Image",
+      task: "within-image-suggestion",
+      label_ids: [],
+      input_contract: {
+        schema_version: 1,
+        task: "within-image-suggestion",
+        conditioning: { kind: "instances", user_selectable_count: true, min_units: 1, max_units: 10 },
+        parameters: [],
+      },
+    };
+
+    const handleSave = vi.fn();
+
+    render(
+      <ConfigureRouteModal
+        isOpen={true}
+        onClose={vi.fn()}
+        target={{ task: "within-image-suggestion", labelId: 1 }}
+        labelsById={labelsById}
+        catalog={{ models: [withinImageModel], retrieval_strategies: [] }}
+        draftBindings={[]}
+        onSaveRoute={handleSave}
+        canEdit={true}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: /SAM 3 Within-Image/i }));
+
+    // Should NOT show retrieval strategy warning
+    expect(
+      screen.queryByText(/requires exemplar retrieval conditioning/i)
+    ).not.toBeInTheDocument();
+
+    // Save button should be enabled
+    const saveBtn = screen.getByRole("button", { name: /Save Route/i });
+    expect(saveBtn).not.toBeDisabled();
+
+    fireEvent.click(saveBtn);
+    expect(handleSave).toHaveBeenCalledWith(
+      "within-image-suggestion",
+      1,
+      expect.objectContaining({
+        model_registry_key: "sam3-within",
+        task: "within-image-suggestion",
+      })
+    );
   });
 });
