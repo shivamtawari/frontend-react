@@ -12,7 +12,7 @@ import {
 /**
  * RoutingSaveBar component
  *
- * Sticky bottom action bar matching the target design:
+ * Routing policy save and action bar matching the target design:
  * Left: Amber status dot, unsaved changes count, and diff preview summary.
  * Right: Clear policy, Reset changes, and teal Save routing policy button.
  */
@@ -50,8 +50,8 @@ export default function RoutingSaveBar({
   return (
     <aside
       aria-label="Routing policy save bar"
-      className={`sticky bottom-0 z-30 -mx-6 -mb-6 mt-8 border-t border-slate-800 bg-[#151b23] shadow-[0_-4px_16px_rgba(0,0,0,0.5)] transition-all ${
-        hasUnsavedChanges ? "py-3 px-6" : "py-2.5 px-6"
+      className={`w-full rounded-2xl border border-slate-800 bg-[#151b23] transition-all mt-6 shadow-xs ${
+        hasUnsavedChanges ? "py-3 px-6 ring-1 ring-amber-500/20 shadow-md" : "py-2.5 px-6"
       } ${className}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-h-[38px]">
