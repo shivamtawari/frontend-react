@@ -4,6 +4,7 @@ import { Play, Loader2, Sparkles, Clock, Trash2, StopCircle, ArrowLeft, Wand2, C
 import DatasetManagementLayout from "../components/datasets/gallery/DatasetManagementLayout";
 import { useDataset } from "../contexts/DatasetContext";
 import {
+    cancelInferenceJob,
     deleteInferenceJob,
     getInferenceJobs,
     getInferenceModelCatalog,
