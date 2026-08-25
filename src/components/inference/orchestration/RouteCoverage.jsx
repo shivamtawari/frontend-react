@@ -109,7 +109,7 @@ export default function RouteCoverage({
                 data-testid={`coverage-segment-${cat.key}`}
               >
                 {/* Thin progress bar above label/count */}
-                <div className="w-full bg-well rounded-full h-1.5 overflow-hidden border border-ln/40">
+                <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-300 ${theme.barColor}`}
                     style={{ width: `${Math.min(100, Math.max(0, catCoverage.percentage))}%` }}
