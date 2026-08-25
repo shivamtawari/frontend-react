@@ -50,8 +50,8 @@ export default function RoutingSaveBar({
   return (
     <aside
       aria-label="Routing policy save bar"
-      className={`sticky bottom-0 z-30 -mx-6 -mb-6 mt-6 border-t border-ln bg-p1/95 backdrop-blur-xs transition-all ${
-        hasUnsavedChanges ? "py-3 px-6 shadow-md" : "py-2.5 px-6 shadow-2xs"
+      className={`sticky bottom-0 z-30 -mx-6 -mb-6 mt-8 border-t border-slate-800 bg-[#151b23] shadow-[0_-4px_16px_rgba(0,0,0,0.5)] transition-all ${
+        hasUnsavedChanges ? "py-3 px-6" : "py-2.5 px-6"
       } ${className}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-h-[38px]">
@@ -67,7 +67,7 @@ export default function RoutingSaveBar({
               <span
                 className={
                   statusMessage.type === "success"
-                    ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                    ? "text-emerald-400 font-medium"
                     : "text-err font-medium"
                 }
               >
