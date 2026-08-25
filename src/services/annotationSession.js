@@ -408,11 +408,12 @@ class AnnotationSession {
    * Run AI segmentation with prompts
    * @param {string} modelIdentifier - Model to use
    * @param {Object} prompts - Prompts object {points, boxes, masks}
+   * @param {Object|null} inputs - Optional routing inputs (parameters / conditioning)
    * @returns {Promise<Object>} Segmentation result
    */
-  async runSegmentation(modelIdentifier, prompts) {
+  async runSegmentation(modelIdentifier, prompts, inputs = null) {
     this._ensureReady();
-    const message = MessageBuilders.runSegmentation(modelIdentifier, prompts);
+    const message = MessageBuilders.runSegmentation(modelIdentifier, prompts, inputs);
     return websocketService.send(message, true);
   }
 
@@ -544,9 +545,10 @@ class AnnotationSession {
    * Run instance segmentation inference
    * @param {string} modelKey - Instance model key
    * @param {'patch'|'override'} writeMode - How predictions are applied to existing contours
+   * @param {Object|null} inputs - Optional routing inputs (parameters / conditioning)
    * @returns {Promise<Object>} Response with added objects (objects are added via OBJECT_ADDED WebSocket messages)
    */
-  async runInstance(modelKey, writeMode = 'patch') {
+  async runInstance(modelKey, writeMode = 'patch', inputs = null) {
     this._ensureReady();
 
     // Check if instance service is available
@@ -554,7 +556,7 @@ class AnnotationSession {
       throw new Error('Instance segmentation service is not available. Please check your connection.');
     }
 
-    const message = MessageBuilders.runInstance(modelKey, writeMode);
+    const message = MessageBuilders.runInstance(modelKey, writeMode, inputs);
     return websocketService.send(message, true);
   }
 

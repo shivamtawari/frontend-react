@@ -320,7 +320,7 @@ export default function useAnnotationServices() {
     setShowInstanceWarning(false);
     setInstanceRunRequested(false);
     setInstanceWarningModalOpen(false);
-    runInstance(writeMode);
+    runInstance(writeMode, instanceRouting?.binding?.inputs);
   };
 
   const services = [

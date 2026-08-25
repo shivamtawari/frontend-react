@@ -115,9 +115,9 @@ export default function ConfigureRouteModal({
     if (existingBinding && existingBinding.model_registry_key) {
       setSelectedModelKey(existingBinding.model_registry_key);
       const existingInputs = existingBinding.inputs || {};
-      const model =
-        models.find((m) => m.task === task && m.registry_key === existingBinding.model_registry_key) ||
-        models.find((m) => m.registry_key === existingBinding.model_registry_key);
+      const model = models.find(
+        (m) => m.task === task && m.registry_key === existingBinding.model_registry_key
+      );
       const effectiveContract = model ? getEffectiveContract(model) : null;
       const defaultCond = getDefaultConditioning(effectiveContract, strategies, label);
       const defaultParams = getDefaultParameters(effectiveContract);
@@ -214,12 +214,8 @@ export default function ConfigureRouteModal({
     return contract?.parameters || [];
   }, [contract]);
 
-  const isDirectExemplarTask =
-    task === "within-image-suggestion" ||
-    task === "instance-suggestion" ||
-    task === "prompted-segmentation";
   const requiresStrategy = Boolean(
-    !isDirectExemplarTask &&
+    task === "cross-image-suggestion" &&
     condSpec &&
     ["reference_images", "instances", "embeddings"].includes(condSpec.kind)
   );

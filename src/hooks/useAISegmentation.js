@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import annotationSession from '../services/annotationSession';
 import { pixelToNormalized } from '../utils/coordinateUtils';
 import {
@@ -17,7 +17,11 @@ import {
   useSetCurrentTool,
   useSetPromptedModel,
   useSyncEditModeDraftFromRefinement,
+  useAvailablePromptedModels,
+  useActiveLabelId,
 } from '../stores/selectors/annotationSelectors';
+import { getInferenceRoutingPolicy } from '../api/inference';
+import { resolveRoutingBinding } from '../utils/inferenceRouting';
 
 /**
  * Normalize contour data from the backend.
@@ -45,6 +49,52 @@ const useAISegmentation = () => {
   const currentImage = useCurrentImage();
   const imageObject = useImageObject();
   const objectsList = useObjectsList();
+  const availablePromptedModels = useAvailablePromptedModels();
+  const activeLabelId = useActiveLabelId();
+  const datasetId = currentImage?.dataset_id;
+  const [policyState, setPolicyState] = useState(() => ({
+    datasetId,
+    status: datasetId != null ? 'loading' : 'idle',
+    policy: null,
+    error: null,
+  }));
+
+  useEffect(() => {
+    let cancelled = false;
+    setPolicyState({
+      datasetId,
+      status: datasetId != null ? 'loading' : 'idle',
+      policy: null,
+      error: null,
+    });
+
+    if (datasetId == null) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getInferenceRoutingPolicy(datasetId)
+      .then((p) => {
+        if (!cancelled) {
+          setPolicyState({ datasetId, status: 'loaded', policy: p || null, error: null });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPolicyState({
+            datasetId,
+            status: 'error',
+            policy: null,
+            error: err?.message || 'Failed to load routing policy',
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetId]);
 
   // Store actions
   // Prompts that produced an object are spent, not discarded — see the slice.
@@ -112,7 +162,7 @@ const useAISegmentation = () => {
   /**
    * Run AI segmentation via WebSocket
    */
-  const runSegmentation = useCallback(async () => {
+  const runSegmentation = useCallback(async (explicitInputs = null) => {
     // Note: promptedModelId is just a string ID, we don't need to set model_status here
     // The status is handled by the backend
     if (!currentImage || !promptedModelId || prompts.length === 0) {
@@ -202,8 +252,21 @@ const useAISegmentation = () => {
       // promptedModelId is already the string identifier we need
       const modelIdentifier = promptedModelId;
 
+      let resolvedInputs = explicitInputs;
+      if (!resolvedInputs && policyState?.policy) {
+        const routing = resolveRoutingBinding(
+          policyState.policy,
+          'prompted-segmentation',
+          activeLabelId,
+          availablePromptedModels
+        );
+        if (routing?.binding?.inputs) {
+          resolvedInputs = routing.binding.inputs;
+        }
+      }
+
       // Send segmentation request via WebSocket
-      const response = await annotationSession.runSegmentation(modelIdentifier, wsPrompts);
+      const response = await annotationSession.runSegmentation(modelIdentifier, wsPrompts, resolvedInputs);
 
       // Transform response to mask format
       const mask = transformResponseToMask(response);
@@ -292,17 +355,19 @@ const useAISegmentation = () => {
     promptedModelId,
     prompts,
     imageObject,
+    refinementActive,
+    refinementObjectId,
     objectsList,
-    setIsSubmitting,
     transformResponseToMask,
-    consumePrompts,
     addObject,
     updateObject,
-    refinementModeActive,
-    refinementModeObjectId,
+    consumePrompts,
     exitRefinementMode,
     setCurrentTool,
     syncEditModeDraftFromRefinement,
+    policyState,
+    activeLabelId,
+    availablePromptedModels,
   ]);
 
   return {

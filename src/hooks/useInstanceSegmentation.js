@@ -14,7 +14,7 @@ export function useInstanceSegmentation(onSuccess, onError) {
   const setIsRunning = useSetIsRunningInstance();
   const instanceModelId = useInstanceModel(); // This is a string ID, not an object
 
-  const runInstance = useCallback(async (writeMode = 'patch') => {
+  const runInstance = useCallback(async (writeMode = 'patch', inputs = null) => {
     if (!instanceModelId) {
       const error = new Error('Please select an instance segmentation model first');
       if (onError) {
@@ -43,7 +43,8 @@ export function useInstanceSegmentation(onSuccess, onError) {
       // instanceModelId is already the string identifier we need
       const response = await annotationSession.runInstance(
         instanceModelId, // Model identifier (string)
-        writeMode
+        writeMode,
+        inputs
       );
 
       if (!response.success) {

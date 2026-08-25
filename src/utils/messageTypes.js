@@ -194,8 +194,9 @@ export const MessageBuilders = {
    * @param {Object} prompts.box_prompt - Single box prompt {min_x, min_y, max_x, max_y} or null
    * @param {Object} prompts.polygon_prompt - Single polygon prompt {vertices: [[x, y], ...]} or null
    * @param {Object} prompts.circle_prompt - Single circle prompt {center_x, center_y, radius} or null
+   * @param {Object|null} inputs - Optional routing inputs (parameters / conditioning)
    */
-  runSegmentation: (modelIdentifier, prompts) => createMessage(
+  runSegmentation: (modelIdentifier, prompts, inputs = null) => createMessage(
     CLIENT_MESSAGE_TYPES.PROMPTED_SEGMENTATION,
     {
       model_identifier: modelIdentifier,
@@ -206,6 +207,7 @@ export const MessageBuilders = {
         polygon_prompt: prompts.polygon_prompt || null,
         circle_prompt: prompts.circle_prompt || null,
       },
+      ...(inputs && typeof inputs === 'object' ? { inputs } : {}),
     }
   ),
 
@@ -291,12 +293,14 @@ export const MessageBuilders = {
    * Request instance segmentation inference
    * @param {string} modelKey - Instance model key
    * @param {'patch'|'override'} writeMode - How predictions are applied to existing contours
+   * @param {Object|null} inputs - Optional routing inputs (parameters / conditioning)
    */
-  runInstance: (modelKey, writeMode = INSTANCE_WRITE_MODES.PATCH) => createMessage(
+  runInstance: (modelKey, writeMode = INSTANCE_WRITE_MODES.PATCH, inputs = null) => createMessage(
     CLIENT_MESSAGE_TYPES.INSTANCE_INFERENCE,
     {
       model_registry_key: modelKey,
       write_mode: writeMode,
+      ...(inputs && typeof inputs === 'object' ? { inputs } : {}),
     }
   ),
 

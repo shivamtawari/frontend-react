@@ -443,11 +443,11 @@ describe("ConfigureRouteModal", () => {
     const retrievalModel = {
       registry_key: "retrieval-seg",
       name: "Retrieval Seg",
-      task: "instance-segmentation",
+      task: "cross-image-suggestion",
       label_ids: [],
       input_contract: {
         schema_version: 1,
-        task: "instance-segmentation",
+        task: "cross-image-suggestion",
         conditioning: {
           kind: "reference_images",
         },
@@ -463,7 +463,7 @@ describe("ConfigureRouteModal", () => {
       <ConfigureRouteModal
         isOpen={true}
         onClose={vi.fn()}
-        target={{ task: "instance-segmentation", labelId: null }}
+        target={{ task: "cross-image-suggestion", labelId: null }}
         labelsById={labelsById}
         catalog={{ models: [retrievalModel], retrieval_strategies: unavailableStrategies }}
         draftBindings={[]}
@@ -719,7 +719,7 @@ describe("ConfigureRouteModal", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("disambiguates multi-task models by task when initializing existing bindings", () => {
+  it("disambiguates multi-task models by canonical task when initializing existing bindings", () => {
     const multiTaskModels = [
       {
         registry_key: "sam3-universal",
@@ -736,11 +736,11 @@ describe("ConfigureRouteModal", () => {
       {
         registry_key: "sam3-universal",
         name: "SAM 3 (Within-Image)",
-        task: "within-image-suggestion",
+        task: "instance-suggestion",
         label_ids: [],
         input_contract: {
           schema_version: 1,
-          task: "within-image-suggestion",
+          task: "instance-suggestion",
           conditioning: { kind: "instances", user_selectable_count: true, min_units: 1, max_units: 10 },
           parameters: [
             {
@@ -756,7 +756,7 @@ describe("ConfigureRouteModal", () => {
 
     const draftBindings = [
       {
-        task: "within-image-suggestion",
+        task: "instance-suggestion",
         label_id: 1,
         model_registry_key: "sam3-universal",
         inputs: {
@@ -769,7 +769,7 @@ describe("ConfigureRouteModal", () => {
       <ConfigureRouteModal
         isOpen={true}
         onClose={vi.fn()}
-        target={{ task: "within-image-suggestion", labelId: 1 }}
+        target={{ task: "instance-suggestion", labelId: 1 }}
         labelsById={labelsById}
         catalog={{ models: multiTaskModels, retrieval_strategies: [] }}
         draftBindings={draftBindings}
@@ -777,20 +777,61 @@ describe("ConfigureRouteModal", () => {
       />
     );
 
-    // Verifies it matched the within-image contract and rendered the mask_threshold parameter input
+    // Verifies it matched the instance-suggestion contract and rendered the mask_threshold parameter input
     expect(screen.getByLabelText(/Mask Threshold/i)).toHaveValue(0.85);
     expect(screen.getByText(/Instances count|Exemplars count/i)).toBeInTheDocument();
+  });
+
+  it("does not hydrate another task's contract when exact task model is missing", () => {
+    const onlyPromptedModels = [
+      {
+        registry_key: "sam3-universal",
+        name: "SAM 3 (Prompted Only)",
+        task: "prompted-segmentation",
+        label_ids: [],
+        input_contract: {
+          schema_version: 1,
+          task: "prompted-segmentation",
+          conditioning: { kind: "none", user_selectable_count: false },
+          parameters: [],
+        },
+      },
+    ];
+
+    const draftBindings = [
+      {
+        task: "instance-suggestion",
+        label_id: 1,
+        model_registry_key: "sam3-universal",
+      },
+    ];
+
+    render(
+      <ConfigureRouteModal
+        isOpen={true}
+        onClose={vi.fn()}
+        target={{ task: "instance-suggestion", labelId: 1 }}
+        labelsById={labelsById}
+        catalog={{ models: onlyPromptedModels, retrieval_strategies: [] }}
+        draftBindings={draftBindings}
+        canEdit={true}
+      />
+    );
+
+    // Because there is no instance-suggestion model for sam3-universal, it must be marked stale/unavailable
+    expect(screen.getByText(/is no longer available in the active catalog/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Mask Threshold/i)).not.toBeInTheDocument();
   });
 
   it("permits saving within-image suggestion models when no retrieval strategies exist", () => {
     const withinImageModel = {
       registry_key: "sam3-within",
       name: "SAM 3 Within-Image",
-      task: "within-image-suggestion",
+      task: "instance-suggestion",
       label_ids: [],
       input_contract: {
         schema_version: 1,
-        task: "within-image-suggestion",
+        task: "instance-suggestion",
         conditioning: { kind: "instances", user_selectable_count: true, min_units: 1, max_units: 10 },
         parameters: [],
       },
@@ -802,7 +843,7 @@ describe("ConfigureRouteModal", () => {
       <ConfigureRouteModal
         isOpen={true}
         onClose={vi.fn()}
-        target={{ task: "within-image-suggestion", labelId: 1 }}
+        target={{ task: "instance-suggestion", labelId: 1 }}
         labelsById={labelsById}
         catalog={{ models: [withinImageModel], retrieval_strategies: [] }}
         draftBindings={[]}
@@ -824,11 +865,11 @@ describe("ConfigureRouteModal", () => {
 
     fireEvent.click(saveBtn);
     expect(handleSave).toHaveBeenCalledWith(
-      "within-image-suggestion",
+      "instance-suggestion",
       1,
       expect.objectContaining({
         model_registry_key: "sam3-within",
-        task: "within-image-suggestion",
+        task: "instance-suggestion",
       })
     );
   });

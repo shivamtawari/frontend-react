@@ -10,13 +10,59 @@ describe('MessageBuilders.runInstance', () => {
     });
   });
 
-  test('preserves override mode in the websocket payload', () => {
+  test('includes inputs in websocket payload when provided', () => {
     const message = MessageBuilders.runInstance(
       'instance-model',
-      INSTANCE_WRITE_MODES.OVERRIDE
+      INSTANCE_WRITE_MODES.PATCH,
+      { parameters: { threshold: 0.75 } }
     );
 
-    expect(message.data.write_mode).toBe('override');
+    expect(message.data).toEqual({
+      model_registry_key: 'instance-model',
+      write_mode: INSTANCE_WRITE_MODES.PATCH,
+      inputs: { parameters: { threshold: 0.75 } },
+    });
+  });
+});
+
+describe('MessageBuilders.runSegmentation', () => {
+  test('builds payload without inputs when none provided', () => {
+    const message = MessageBuilders.runSegmentation('sam-model', {
+      point_prompts: [{ x: 0.1, y: 0.2, label: true }],
+    });
+
+    expect(message.data).toEqual({
+      model_identifier: 'sam-model',
+      model_key: 'sam-model',
+      prompts: {
+        point_prompts: [{ x: 0.1, y: 0.2, label: true }],
+        box_prompt: null,
+        polygon_prompt: null,
+        circle_prompt: null,
+      },
+    });
+  });
+
+  test('includes inputs in websocket payload when provided', () => {
+    const message = MessageBuilders.runSegmentation(
+      'sam-model',
+      { point_prompts: [{ x: 0.1, y: 0.2, label: true }] },
+      { parameters: { threshold: 0.9 } }
+    );
+
+    expect(message.data).toEqual({
+      model_identifier: 'sam-model',
+      model_key: 'sam-model',
+      prompts: {
+        point_prompts: [{ x: 0.1, y: 0.2, label: true }],
+        box_prompt: null,
+        polygon_prompt: null,
+        circle_prompt: null,
+      },
+      inputs: {
+        parameters: { threshold: 0.9 },
+      },
+    });
   });
 });
 
