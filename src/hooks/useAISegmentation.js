@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import annotationSession from '../services/annotationSession';
 import { pixelToNormalized } from '../utils/coordinateUtils';
+import { useDataset } from '../contexts/DatasetContext';
 import {
   useAIPrompts,
   usePromptedModel,
@@ -41,6 +43,8 @@ const normalizeContourData = (data) => {
  */
 const useAISegmentation = () => {
   const [error, setError] = useState(null);
+  const { datasetId: routeDatasetId } = useParams();
+  const { currentDataset } = useDataset();
 
   // Store state
   const prompts = useAIPrompts();
@@ -51,7 +55,11 @@ const useAISegmentation = () => {
   const objectsList = useObjectsList();
   const availablePromptedModels = useAvailablePromptedModels();
   const activeLabelId = useActiveLabelId();
-  const datasetId = currentImage?.dataset_id;
+  const datasetId =
+    currentImage?.dataset_id ??
+    (routeDatasetId ? parseInt(routeDatasetId, 10) : null) ??
+    currentDataset?.id ??
+    null;
   const [policyState, setPolicyState] = useState(() => ({
     datasetId,
     status: datasetId != null ? 'loading' : 'idle',
@@ -355,8 +363,8 @@ const useAISegmentation = () => {
     promptedModelId,
     prompts,
     imageObject,
-    refinementActive,
-    refinementObjectId,
+    refinementModeActive,
+    refinementModeObjectId,
     objectsList,
     transformResponseToMask,
     addObject,

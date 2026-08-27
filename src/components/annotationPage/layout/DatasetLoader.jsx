@@ -42,6 +42,9 @@ const DatasetLoader = ({ children }) => {
 
   const [datasetNotFound, setDatasetNotFound] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [imageLoadError, setImageLoadError] = useState(null);
+  const [isDatasetEmpty, setIsDatasetEmpty] = useState(false);
+  const [isImagesLoading, setIsImagesLoading] = useState(true);
 
   // Select the dataset based on the URL parameter
   useEffect(() => {
@@ -105,11 +108,12 @@ const DatasetLoader = ({ children }) => {
 
   // Load images for the dataset
   const loadDatasetImages = async (dataset) => {
+    setIsImagesLoading(true);
+    setImageLoadError(null);
+    setIsDatasetEmpty(false);
     try {
       // Fetch images from API
       const response = await fetchImages(dataset.id);
-
-      
       const imageDataList = response.image_data || response.images || [];
 
       if (response.success && imageDataList.length > 0) {
@@ -117,6 +121,7 @@ const DatasetLoader = ({ children }) => {
         // We need to fetch full image details or use what we have
         const apiImages = imageDataList.map((img) => ({
           id: img.image_id || img.id,
+          dataset_id: img.dataset_id || dataset.id,
           name: img.file_name || img.filename || `image_${img.image_id || img.id}`,
           width: img.width,
           height: img.height,
@@ -168,13 +173,19 @@ const DatasetLoader = ({ children }) => {
           const firstUnfinished = orderedImages.find(img => !isAnnotated(img));
           setCurrentImage(firstUnfinished || orderedImages[0]);
         }
-      } else {
-        // Fallback to empty list
+        setIsDatasetEmpty(false);
+      } else if (response.success && imageDataList.length === 0) {
         setImageList([]);
+        setIsDatasetEmpty(true);
+      } else {
+        setImageList([]);
+        setImageLoadError(response.error || response.message || "Failed to load images for this dataset.");
       }
     } catch (error) {
-      // Fallback to empty list
       setImageList([]);
+      setImageLoadError(error?.message || "Failed to fetch images from server.");
+    } finally {
+      setIsImagesLoading(false);
     }
   };
 
@@ -227,13 +238,74 @@ const DatasetLoader = ({ children }) => {
     );
   }
 
+  // Show image loading error state with Retry
+  if (imageLoadError) {
+    return (
+      <div className="min-h-screen bg-well flex items-center justify-center p-6" data-testid="dataset-image-error">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-errBg rounded-full flex items-center justify-center mx-auto mb-4 border border-errLn">
+            <span className="text-err text-2xl">⚠️</span>
+          </div>
+          <h2 className="text-xl font-semibold text-t1 mb-2">Failed to Load Images</h2>
+          <p className="text-t2 mb-6 text-sm">
+            {imageLoadError}
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => currentDataset && loadDatasetImages(currentDataset)}
+              className="bg-accent text-onAccent px-5 py-2 rounded-lg font-medium hover:brightness-110 transition shadow-xs"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate("/datasets")}
+              className="px-5 py-2 rounded-lg border border-ln bg-well text-t2 hover:text-t1 transition"
+            >
+              Back to Datasets
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty dataset state
+  if (isDatasetEmpty) {
+    return (
+      <div className="min-h-screen bg-well flex items-center justify-center p-6" data-testid="dataset-empty-state">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-acS rounded-full flex items-center justify-center mx-auto mb-4 border border-acLn">
+            <span className="text-ac text-2xl">🖼️</span>
+          </div>
+          <h2 className="text-xl font-semibold text-t1 mb-2">No Images in Dataset</h2>
+          <p className="text-t2 mb-6 text-sm">
+            This dataset does not contain any images to annotate yet.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => navigate(`/dataset/${datasetId}/datamanagement/images`)}
+              className="bg-accent text-onAccent px-5 py-2 rounded-lg font-medium hover:brightness-110 transition shadow-xs"
+            >
+              Upload Images
+            </button>
+            <button
+              onClick={() => navigate("/datasets")}
+              className="px-5 py-2 rounded-lg border border-ln bg-well text-t2 hover:text-t1 transition"
+            >
+              Back to Datasets
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Check if images are loaded
   const currentState = useAnnotationStore.getState();
   const hasImages = currentState.images.imageList.length > 0;
-  const hasCurrentImage = currentState.images.currentImage !== null;
 
-  // If no images are loaded yet, show loading
-  if (!hasImages) {
+  // If images are still being fetched, show loading
+  if (isImagesLoading || !hasImages) {
     return (
       <div className="min-h-screen bg-well flex items-center justify-center">
         <div className="text-center">

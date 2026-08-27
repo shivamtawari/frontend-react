@@ -110,18 +110,19 @@ export const getDefaultConditioning = (contract, strategies = [], label = null) 
   const maxUnits = condSpec?.max_units ?? null;
   const selectable = Boolean(condSpec?.user_selectable_count);
 
-  let count = 1;
+  const result = {};
+
   if (selectable) {
-    count = 5;
+    let count = 5;
     if (minUnits > count) count = minUnits;
     if (maxUnits !== null && count > maxUnits) count = maxUnits;
-  } else {
-    count = maxUnits !== null ? maxUnits : (minUnits > 0 ? minUnits : 1);
+    result.count = count;
+  } else if (maxUnits !== null && maxUnits === minUnits) {
+    // Only set fixed count when min and max units are explicitly constrained to the same value
+    result.count = maxUnits;
   }
 
-  const result = { count };
-
-  if (kind === "reference_images" || kind === "instances" || kind === "embeddings") {
+  if (kind === "reference_images" || kind === "embeddings" || contract?.task === "cross-image-suggestion") {
     const availableStrategy = strategies.find((s) => s.available)?.key || strategies[0]?.key || "global_scene";
     result.strategy = availableStrategy;
   }
@@ -149,7 +150,7 @@ export const initStep = (label, model, strategies = []) => {
     // Legacy migration compatibility fields
     min_confidence: 0,
     retrieval_strategy: conditioning.strategy ?? null,
-    top_k: conditioning.count ?? 5,
+    top_k: conditioning.count ?? null,
   };
 
   return step;

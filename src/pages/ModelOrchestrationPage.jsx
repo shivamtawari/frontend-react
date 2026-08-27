@@ -13,6 +13,7 @@ import { fetchLabels } from "../api/labels";
 import ModelOrchestrationPanel from "../components/inference/ModelOrchestrationPanel";
 import { usePermissions } from "../hooks/usePermissions";
 import { Permission } from "../utils/permissions";
+import { TASK_ORDER } from "../constants/tasks";
 
 /**
  * Model Orchestration Page
@@ -179,19 +180,19 @@ export default function ModelOrchestrationPage() {
                                 Model Orchestration
                             </h1>
                             <p className="text-xs text-t3 mt-0.5 line-clamp-1">
-                                One cell per task and label. Filled cells are bound routes; dashed cells fall through to the task default.
+                                One cell per task and label. Configured routes take precedence; unconfigured cells use the task default when available.
                             </p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-5 shrink-0">
-                        {/* Bound stats block */}
+                        {/* Configured routes stats block */}
                         <div className="text-right hidden sm:block">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-t3">
-                                BOUND
+                                CONFIGURED ROUTES
                             </div>
                             <div className="text-sm font-bold text-t1 font-mono">
-                                {policy?.bindings?.length || 0} / {(Object.keys(labelsById).length + 1) * 3}
+                                {policy?.bindings?.length || 0} / {(Object.keys(labelsById).length + 1) * TASK_ORDER.length}
                             </div>
                         </div>
 

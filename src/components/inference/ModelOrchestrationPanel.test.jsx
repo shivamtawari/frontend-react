@@ -16,7 +16,7 @@ describe("ModelOrchestrationPanel (Design B)", () => {
       task: "prompted-segmentation",
       label_ids: [],
       latency_badge: "balanced",
-      is_fine_tuned: false,
+      trained_on_dataset: false,
     },
     {
       registry_key: "coral-ft-v3",
@@ -24,7 +24,7 @@ describe("ModelOrchestrationPanel (Design B)", () => {
       task: "prompted-segmentation",
       label_ids: [1],
       latency_badge: "fast",
-      is_fine_tuned: true,
+      trained_on_dataset: true,
       input_contract: {
         parameters: [
           { key: "threshold", label: "Mask threshold", type: "float", min_value: 0, max_value: 1, default_value: 0.62 },
@@ -37,7 +37,7 @@ describe("ModelOrchestrationPanel (Design B)", () => {
       task: "instance-segmentation",
       label_ids: [1, 2],
       latency_badge: "accurate",
-      is_fine_tuned: true,
+      trained_on_dataset: true,
     },
   ];
 
