@@ -192,7 +192,9 @@ export default function ModelOrchestrationPage() {
                                 CONFIGURED ROUTES
                             </div>
                             <div className="text-sm font-bold text-t1 font-mono">
-                                {policy?.bindings?.length || 0} / {(Object.keys(labelsById).length + 1) * TASK_ORDER.length}
+                                {datasetLoading || isLoading
+                                    ? "Loading…"
+                                    : `${policy?.bindings?.length || 0} / ${(Object.keys(labelsById).length + 1) * TASK_ORDER.length}`}
                             </div>
                         </div>
 
