@@ -62,8 +62,7 @@ export default function MatrixGrid({
     {
       key: "prompted-segmentation",
       task: "prompted-segmentation",
-      label: "Prompted seg",
-      subtitle: "Point/box prompts",
+      label: "Prompted segmentation",
       dotColor: "bg-teal-500 dark:bg-teal-400 shadow-teal-400/50",
       dotText: "text-teal-500 dark:text-teal-400",
       explicitCard: "border-2 border-teal-500 bg-teal-500/15 dark:bg-teal-500/20 hover:border-teal-400 text-teal-950 dark:text-white shadow-xs",
@@ -74,7 +73,6 @@ export default function MatrixGrid({
       key: "instance-suggestion",
       task: "instance-suggestion",
       label: "Within-image suggestion",
-      subtitle: "Examples from this image",
       dotColor: "bg-cyan-500 dark:bg-cyan-400 shadow-cyan-400/50",
       dotText: "text-cyan-500 dark:text-cyan-400",
       explicitCard: "border-2 border-cyan-500 bg-cyan-500/15 dark:bg-cyan-500/20 hover:border-cyan-400 text-cyan-950 dark:text-white shadow-xs",
@@ -85,7 +83,6 @@ export default function MatrixGrid({
       key: "instance-segmentation",
       task: "instance-segmentation",
       label: "Instance segmentation",
-      subtitle: "Whole dataset",
       dotColor: "bg-amber-500 dark:bg-amber-400 shadow-amber-400/50",
       dotText: "text-amber-500 dark:text-amber-400",
       explicitCard: "border-2 border-amber-500 bg-amber-500/15 dark:bg-amber-500/20 hover:border-amber-400 text-amber-950 dark:text-white shadow-xs",
@@ -96,7 +93,6 @@ export default function MatrixGrid({
       key: "cross-image-suggestion",
       task: "cross-image-suggestion",
       label: "Cross-image suggestion",
-      subtitle: "Examples across images",
       dotColor: "bg-purple-500 dark:bg-purple-400 shadow-purple-400/50",
       dotText: "text-purple-500 dark:text-purple-400",
       explicitCard: "border-2 border-purple-500 bg-purple-500/15 dark:bg-purple-500/20 hover:border-purple-400 text-purple-950 dark:text-white shadow-xs",
@@ -324,7 +320,6 @@ export default function MatrixGrid({
                 <span className={`w-2 h-2 rounded-full shrink-0 ${col.dotColor}`} />
                 <span className="font-bold text-t1">{col.label}</span>
               </div>
-              <p className="text-[11px] text-t3 truncate">{col.subtitle}</p>
             </div>
           ))}
         </div>

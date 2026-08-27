@@ -12,7 +12,7 @@ export const TASKS = {
     key: "prompted-segmentation",
     endpoint: "prompted_segmentation",
     short: "Prompted",
-    label: "Prompted seg",
+    label: "Prompted segmentation",
     description: "Interactive point-and-box segmentation for guided annotation.",
     chip: "bg-acS text-ac",
     dot: "bg-accent",

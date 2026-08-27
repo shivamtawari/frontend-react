@@ -63,15 +63,11 @@ describe("MatrixGrid (Design B)", () => {
       />
     );
 
-    // 4 Canonical Task Headers with shortened subtitles
-    expect(screen.getByText("Prompted seg")).toBeInTheDocument();
-    expect(screen.getByText("Point/box prompts")).toBeInTheDocument();
+    // 4 canonical task headers without extra subtitles
+    expect(screen.getByText("Prompted segmentation")).toBeInTheDocument();
     expect(screen.getByText("Within-image suggestion")).toBeInTheDocument();
-    expect(screen.getByText("Examples from this image")).toBeInTheDocument();
     expect(screen.getByText("Instance segmentation")).toBeInTheDocument();
-    expect(screen.getByText("Whole dataset")).toBeInTheDocument();
     expect(screen.getByText("Cross-image suggestion")).toBeInTheDocument();
-    expect(screen.getByText("Examples across images")).toBeInTheDocument();
 
     // Task default row header and inherited cells
     expect(screen.getAllByText("Task default").length).toBeGreaterThan(1);
