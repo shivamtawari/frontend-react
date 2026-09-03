@@ -7,6 +7,7 @@ const EMPTY_IDS = new Set();
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 12;
 const ZOOM_STEP = 1.3;
+const DRAG_THRESHOLD = 5;
 
 /** Bounding box of a contour, from its normalized (0–1) coordinate arrays. */
 const contourBounds = (contour) => {
@@ -82,7 +83,43 @@ const AnnotationViewerCanvas = ({
   const [natural, setNatural] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const dragRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  // Track container dimensions to recompute fit and minZoom after layout/viewport changes.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    setContainerSize({
+      width: container.clientWidth,
+      height: container.clientHeight,
+    });
+
+    if (typeof ResizeObserver === 'undefined') {
+      const handleWindowResize = () => {
+        if (containerRef.current) {
+          setContainerSize({
+            width: containerRef.current.clientWidth,
+            height: containerRef.current.clientHeight,
+          });
+        }
+      };
+      window.addEventListener('resize', handleWindowResize);
+      return () => window.removeEventListener('resize', handleWindowResize);
+    }
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setContainerSize({ width, height });
+      }
+    });
+
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   // Centre of the selected contour in natural-pixel coordinates, or null when
   // nothing is selected. This is the anchor zooming pivots around while an
@@ -114,37 +151,85 @@ const AnnotationViewerCanvas = ({
   );
 
   /** Scale that fits the whole image in the viewport. */
-  const fitScale = useCallback(() => {
-    const container = containerRef.current;
-    if (!container || !natural.width || !natural.height) return 1;
-    const { clientWidth, clientHeight } = container;
-    return Math.min(clientWidth / natural.width, clientHeight / natural.height) || 1;
-  }, [natural]);
+  const fitScale = useCallback(
+    (dims = natural) => {
+      const container = containerRef.current;
+      if (!container || !dims?.width || !dims?.height) return 1;
+      const clientWidth = container.clientWidth || containerSize.width;
+      const clientHeight = container.clientHeight || containerSize.height;
+      if (!clientWidth || !clientHeight) return 1;
+      return Math.min(clientWidth / dims.width, clientHeight / dims.height) || 1;
+    },
+    [natural, containerSize]
+  );
 
   const resetView = useCallback(() => {
     setZoom(fitScale());
     setOffset({ x: 0, y: 0 });
   }, [fitScale]);
 
-  // Fit on load and whenever a different image arrives.
-  useEffect(() => {
-    if (natural.width) resetView();
-  }, [natural, resetView]);
+  /**
+   * Effective minimum zoom: calculated from the live container size so zooming out
+   * never clamps upward after a viewport shrink.
+   */
+  const getMinZoom = useCallback(() => {
+    const fit = fitScale();
+    return Math.min(MIN_ZOOM, fit * 0.8);
+  }, [fitScale]);
 
-  // Frame the requested contour. Recomputed from the bounding box each time so
-  // repeated clicks on the same object re-centre it rather than drifting.
+  const minZoom = useMemo(() => getMinZoom(), [getMinZoom]);
+
+  const loadedImageRef = useRef(null);
+  const lastFramedRef = useRef({ target: null, src: null });
+
+  /**
+   * Fit on load once the actual decoded dimensions of the new image are available,
+   * preventing race conditions where Image B is fitted using Image A's dimensions.
+   */
+  const handleImageLoad = (e) => {
+    const size = {
+      width: e.target.naturalWidth,
+      height: e.target.naturalHeight,
+    };
+    loadedImageRef.current = imageSrc;
+    setNatural(size);
+    onNaturalSize?.(size);
+    if (!zoomTarget) {
+      setZoom(fitScale(size));
+      setOffset({ x: 0, y: 0 });
+    }
+  };
+
+  // Frame the requested contour. Recomputed when a new zoom target arrives (or on
+  // repeated clicks creating a fresh object) or when navigating to a new image once loaded,
+  // while container resizing preserves the user's current view.
   useEffect(() => {
     const container = containerRef.current;
-    if (!zoomTarget || !container || !natural.width) return;
+    if (!zoomTarget || !container || !natural.width) {
+      if (!zoomTarget) lastFramedRef.current = { target: null, src: null };
+      return;
+    }
+    // Wait until the incoming image has actually loaded so we never frame with the previous image's dimensions
+    if (loadedImageRef.current !== imageSrc) return;
+
+    if (lastFramedRef.current.target === zoomTarget && lastFramedRef.current.src === imageSrc) {
+      return;
+    }
+    lastFramedRef.current = { target: zoomTarget, src: imageSrc };
+
     const bounds = contourBounds(zoomTarget);
-    if (!bounds) return;
+    if (!bounds) {
+      setZoom(fitScale());
+      setOffset({ x: 0, y: 0 });
+      return;
+    }
 
     const { clientWidth, clientHeight } = container;
     const boxW = Math.max((bounds.maxX - bounds.minX) * natural.width, 1);
     const boxH = Math.max((bounds.maxY - bounds.minY) * natural.height, 1);
     // Leave a margin so the object is not flush against the viewport edge.
     const target = Math.min(clientWidth / (boxW * 1.6), clientHeight / (boxH * 1.6));
-    const nextZoom = Math.min(Math.max(target, MIN_ZOOM), MAX_ZOOM);
+    const nextZoom = Math.min(Math.max(target, getMinZoom()), MAX_ZOOM);
 
     const centerX = ((bounds.minX + bounds.maxX) / 2) * natural.width;
     const centerY = ((bounds.minY + bounds.maxY) / 2) * natural.height;
@@ -154,7 +239,7 @@ const AnnotationViewerCanvas = ({
       x: (natural.width / 2 - centerX) * nextZoom,
       y: (natural.height / 2 - centerY) * nextZoom,
     });
-  }, [zoomTarget, natural]);
+  }, [zoomTarget, imageSrc, natural, fitScale, getMinZoom]);
 
   /**
    * Zoom to `nextZoom` while keeping `focal` (a point in natural-pixel
@@ -170,7 +255,8 @@ const AnnotationViewerCanvas = ({
    */
   const zoomTo = useCallback(
     (nextZoom, focal) => {
-      const clamped = Math.min(Math.max(nextZoom, MIN_ZOOM), MAX_ZOOM);
+      const currentMinZoom = getMinZoom();
+      const clamped = Math.min(Math.max(nextZoom, currentMinZoom), MAX_ZOOM);
       if (clamped === zoom || !natural.width) return;
       const imageCenter = { x: natural.width / 2, y: natural.height / 2 };
       const pivot = focal || selectedCenter || imageCenter;
@@ -180,7 +266,7 @@ const AnnotationViewerCanvas = ({
       });
       setZoom(clamped);
     },
-    [zoom, offset, natural, selectedCenter]
+    [zoom, offset, natural, selectedCenter, getMinZoom]
   );
 
   const handleWheel = (e) => {
@@ -188,36 +274,51 @@ const AnnotationViewerCanvas = ({
     if (!natural.width || !containerRef.current) return;
     const nextZoom = zoom * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP);
 
-    // With an instance selected, pivot on it. Otherwise pivot on whatever the
-    // cursor is hovering over: invert the transform to recover the natural-pixel
-    // point currently under the pointer.
-    let focal = selectedCenter;
-    if (!focal) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const cursorFromCenter = {
-        x: e.clientX - rect.left - rect.width / 2,
-        y: e.clientY - rect.top - rect.height / 2,
-      };
-      focal = {
-        x: natural.width / 2 + (cursorFromCenter.x - offset.x) / zoom,
-        y: natural.height / 2 + (cursorFromCenter.y - offset.y) / zoom,
-      };
-    }
+    // Pivot around whatever the cursor is hovering over: invert the transform
+    // to recover the natural-pixel point currently under the pointer.
+    const rect = containerRef.current.getBoundingClientRect();
+    const cursorFromCenter = {
+      x: e.clientX - rect.left - rect.width / 2,
+      y: e.clientY - rect.top - rect.height / 2,
+    };
+    const focal = {
+      x: natural.width / 2 + (cursorFromCenter.x - offset.x) / zoom,
+      y: natural.height / 2 + (cursorFromCenter.y - offset.y) / zoom,
+    };
     zoomTo(nextZoom, focal);
   };
 
   const handleMouseDown = (e) => {
+    if (e.button !== 0) return;
     dragRef.current = { x: e.clientX, y: e.clientY, offset };
+    isDraggingRef.current = false;
   };
 
   const handleMouseMove = (e) => {
     if (!dragRef.current) return;
     const { x, y, offset: start } = dragRef.current;
-    setOffset({ x: start.x + (e.clientX - x), y: start.y + (e.clientY - y) });
+    const dx = e.clientX - x;
+    const dy = e.clientY - y;
+    if (!isDraggingRef.current && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      isDraggingRef.current = true;
+    }
+    if (isDraggingRef.current) {
+      setOffset({ x: start.x + dx, y: start.y + dy });
+    }
   };
 
   const endDrag = () => {
     dragRef.current = null;
+    // Delay resetting so trailing click events triggered on mouseup are suppressed
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 0);
+  };
+
+  const handleClickCapture = (e) => {
+    if (isDraggingRef.current) {
+      e.stopPropagation();
+    }
   };
 
   return (
@@ -230,6 +331,7 @@ const AnnotationViewerCanvas = ({
         onMouseMove={handleMouseMove}
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
+        onClickCapture={handleClickCapture}
       >
         {imageSrc && (
           <div
@@ -246,14 +348,7 @@ const AnnotationViewerCanvas = ({
               src={imageSrc}
               alt="Annotated"
               draggable={false}
-              onLoad={(e) => {
-                const size = {
-                  width: e.target.naturalWidth,
-                  height: e.target.naturalHeight,
-                };
-                setNatural(size);
-                onNaturalSize?.(size);
-              }}
+              onLoad={handleImageLoad}
               style={{ display: 'block', width: '100%', height: '100%' }}
             />
 
@@ -262,7 +357,9 @@ const AnnotationViewerCanvas = ({
                 viewBox={`0 0 ${natural.width} ${natural.height}`}
                 className="absolute inset-0 w-full h-full"
                 // Clicking empty space clears the selection.
-                onClick={() => onSelect?.(null)}
+                onClick={() => {
+                  if (!isDraggingRef.current) onSelect?.(null);
+                }}
               >
                 {drawableContours.map(({ contour, d }) => {
                   const isSelected = contour.id === selectedId;
@@ -288,7 +385,7 @@ const AnnotationViewerCanvas = ({
                       className="cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelect?.(contour.id);
+                        if (!isDraggingRef.current) onSelect?.(contour.id);
                       }}
                     />
                   );
@@ -310,7 +407,8 @@ const AnnotationViewerCanvas = ({
         </button>
         <button
           onClick={() => zoomTo(zoom / ZOOM_STEP)}
-          className="p-1.5 hover:bg-hv rounded transition-colors"
+          disabled={zoom <= minZoom}
+          className="p-1.5 hover:bg-hv rounded transition-colors disabled:opacity-40 disabled:pointer-events-none"
           title="Zoom out"
         >
           <Minus className="w-4 h-4 text-t2" />
