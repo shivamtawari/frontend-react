@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -48,6 +48,16 @@ import { pickFeaturedMetric } from "../utils/perImageQuantification";
 const QuantificationExplorer = React.lazy(() =>
   import("../components/quantification/QuantificationExplorer")
 );
+
+/** Row keys that identify or structure the object rather than measure it. */
+const NON_METRIC_ROW_KEYS = new Set([
+  "file_name",
+  "label",
+  "label_id",
+  "contour_id",
+  "parent_id",
+  "parent_label",
+]);
 
 const readableError = (err, fallback) =>
   (err?.message || "").replace(/^API Error:\s*/i, "") || fallback;
@@ -99,6 +109,7 @@ const ViewButton = ({ icon: Icon, label, active, onClick }) => (
 const ImageQuantificationPage = () => {
   const { datasetId, imageId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { can } = usePermissions(datasetId);
   const theme = useWorkspaceTheme();
   const study = useStudyView();
@@ -111,6 +122,7 @@ const ImageQuantificationPage = () => {
   // entitled to it, or the study condition removes it. They read very differently to the
   // person looking at the page, so they are kept apart and explained separately.
   const showTable = canExport && study.table;
+  const shouldFetchRows = canExport && study.table;
 
   const [images, setImages] = useState([]);
   const [catalog, setCatalog] = useState([]);
@@ -124,6 +136,8 @@ const ImageQuantificationPage = () => {
   const [datasetSummary, setDatasetSummary] = useState(null);
   const [rows, setRows] = useState([]);
   const [rowsMessage, setRowsMessage] = useState(null);
+  const [rowsError, setRowsError] = useState(null);
+  const [rowsLoadedEmpty, setRowsLoadedEmpty] = useState(false);
 
   const [imageSrc, setImageSrc] = useState(null);
   const [contours, setContours] = useState([]);
@@ -135,7 +149,10 @@ const ImageQuantificationPage = () => {
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [loadingImage, setLoadingImage] = useState(false);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
-  const [error, setError] = useState(null);
+  const [metaError, setMetaError] = useState(null);
+  const [imageError, setImageError] = useState(null);
+  const [metricsError, setMetricsError] = useState(null);
+  const [scaleError, setScaleError] = useState(null);
 
   const numericImageId = imageId ? Number(imageId) : null;
   const currentIndex = images.findIndex((item) => item.id === numericImageId);
@@ -149,6 +166,7 @@ const ImageQuantificationPage = () => {
 
     const load = async () => {
       setLoadingMeta(true);
+      setMetaError(null);
       try {
         const [imageResponse, catalogResponse, profileResponse] = await Promise.all([
           api.fetchImages(datasetId),
@@ -165,9 +183,9 @@ const ImageQuantificationPage = () => {
         setProfiles(loadedProfiles);
         const preferred = loadedProfiles.find((p) => p.is_default) || loadedProfiles[0];
         setActiveProfileId(preferred ? preferred.id : null);
-        setError(null);
+        setMetaError(null);
       } catch (err) {
-        if (!cancelled) setError(readableError(err, "Could not load this dataset."));
+        if (!cancelled) setMetaError(readableError(err, "Could not load this dataset."));
       } finally {
         if (!cancelled) setLoadingMeta(false);
       }
@@ -179,15 +197,23 @@ const ImageQuantificationPage = () => {
     };
   }, [datasetId]);
 
+  const navigateToImage = useCallback(
+    (targetImageId, options = {}) => {
+      navigate(
+        `/dataset/${datasetId}/quantifications/image/${targetImageId}${location.search}`,
+        options
+      );
+    },
+    [datasetId, location.search, navigate]
+  );
+
   // The route may carry no image (the entry point from the dataset page does not know one
   // yet). Land on the first image rather than showing an empty shell, and replace rather
   // than push so Back leaves the page instead of bouncing between the two URLs.
   useEffect(() => {
     if (numericImageId || images.length === 0) return;
-    navigate(`/dataset/${datasetId}/quantifications/image/${images[0].id}`, {
-      replace: true,
-    });
-  }, [numericImageId, images, datasetId, navigate]);
+    navigateToImage(images[0].id, { replace: true });
+  }, [numericImageId, images, navigateToImage]);
 
   // -- The image itself ------------------------------------------------------
 
@@ -197,12 +223,15 @@ const ImageQuantificationPage = () => {
 
     const load = async () => {
       setLoadingImage(true);
+      setImageError(null);
+      setScaleError(null);
       setSelectedContourId(null);
       setZoomTarget(null);
       setNaturalSize(null);
       setContours([]);
+      setPixelScale(null);
       try {
-        const [imageData, contourResponse, scale] = await Promise.all([
+        const [imageData, contourResponse, scaleResult] = await Promise.all([
           api.getImageById(currentImage.id, false),
           // Not fetched at all when the study condition hides the overlay: an outline that
           // is merely not drawn is still in the response, and the point of the condition is
@@ -212,7 +241,12 @@ const ImageQuantificationPage = () => {
             : Promise.resolve({ contours: [] }),
           // The image list carries no scale, and every measurement on this page is either
           // in that unit or in pixels because it is missing.
-          getPixelScale(currentImage.id).catch(() => null),
+          getPixelScale(currentImage.id)
+            .then((scale) => ({ data: scale, error: null }))
+            .catch((err) => ({
+              data: null,
+              error: readableError(err, "Could not load image calibration."),
+            })),
         ]);
         if (cancelled) return;
 
@@ -226,9 +260,10 @@ const ImageQuantificationPage = () => {
 
         setImageSrc(base64 ? `data:image/png;base64,${base64}` : null);
         setContours(contourResponse.contours || []);
-        setPixelScale(scale);
+        setPixelScale(scaleResult.data);
+        setScaleError(scaleResult.error);
       } catch (err) {
-        if (!cancelled) setError(readableError(err, "Could not load this image."));
+        if (!cancelled) setImageError(readableError(err, "Could not load this image."));
       } finally {
         if (!cancelled) setLoadingImage(false);
       }
@@ -257,26 +292,46 @@ const ImageQuantificationPage = () => {
 
     const load = async () => {
       setLoadingMetrics(true);
+      setMetricsError(null);
+      setRowsError(null);
+      setImageSummary(null);
+      setDatasetSummary(null);
+      setRows([]);
+      setRowsMessage(null);
+      setRowsLoadedEmpty(false);
       try {
         const [scoped, whole, rowResult] = await Promise.all([
           getQuantificationSummary(Number(datasetId), { ...options, imageId: numericImageId }),
           getQuantificationSummary(Number(datasetId), options),
-          // Same reasoning as the contours: a hidden table is an unmade request.
-          showTable
+          // A hidden table is an unmade request: avoid downloading hidden table data when
+          // study.table is off or user lacks export permission.
+          shouldFetchRows
             ? fetchQuantificationRows(Number(datasetId), {
                 ...options,
                 imageId: numericImageId,
               })
-            : Promise.resolve({ rows: [], message: null }),
+                .then((res) => ({ ...res, error: null }))
+                .catch((err) => ({
+                  rows: [],
+                  message: null,
+                  error: readableError(err, "Could not load per-object measurements."),
+                }))
+            : Promise.resolve({ rows: [], message: null, error: null }),
         ]);
         if (cancelled) return;
         setImageSummary(scoped);
         setDatasetSummary(whole);
-        setRows(rowResult.rows);
-        setRowsMessage(rowResult.message);
-        setError(null);
+        setRows(rowResult.rows || []);
+        setRowsMessage(rowResult.message || null);
+        setRowsError(rowResult.error || null);
+        setRowsLoadedEmpty(
+          shouldFetchRows && !rowResult.error
+            ? (rowResult.rows || []).length === 0
+            : !scoped?.metrics || Object.keys(scoped.metrics).length === 0
+        );
+        setMetricsError(null);
       } catch (err) {
-        if (!cancelled) setError(readableError(err, "Could not load the measurements."));
+        if (!cancelled) setMetricsError(readableError(err, "Could not load the measurements."));
       } finally {
         if (!cancelled) setLoadingMetrics(false);
       }
@@ -292,7 +347,7 @@ const ImageQuantificationPage = () => {
     activeProfileId,
     includeInProgress,
     includeUnreviewed,
-    showTable,
+    shouldFetchRows,
   ]);
 
   // -- Derived ---------------------------------------------------------------
@@ -311,21 +366,68 @@ const ImageQuantificationPage = () => {
     () => ({
       width: naturalSize?.width,
       height: naturalSize?.height,
-      scale_x: pixelScale?.scale_x ?? 1,
-      scale_y: pixelScale?.scale_y ?? 1,
-      unit: pixelScale?.unit || "px",
+      scale_x: pixelScale?.scale_x ?? null,
+      scale_y: pixelScale?.scale_y ?? null,
+      unit: pixelScale?.unit || null,
     }),
     [naturalSize, pixelScale]
   );
 
-  // Only the objects the table lists are drawn as subjects; everything else on the image is
-  // context. Without this an object excluded by the inclusion toggles would still be drawn
-  // exactly like a measured one, and the canvas would contradict the count above it.
+  // Only objects with at least one non-null profile metric value are drawn as subjects;
+  // everything else on the image is context. The backend export returns one row for every
+  // filtered contour (including contextual only-children or profile-excluded contours) with
+  // null metric cells, so row presence alone does not mean the contour was measured.
   const contextIds = useMemo(() => {
-    if (rows.length === 0) return new Set();
-    const measured = new Set(rows.map((row) => row.contour_id));
-    return new Set(contours.filter((c) => !measured.has(c.id)).map((c) => c.id));
-  }, [contours, rows]);
+    if (rowsLoadedEmpty) {
+      return new Set(contours.map((c) => c.id));
+    }
+    if (rows.length > 0) {
+      const measured = new Set(
+        rows
+          .filter((row) =>
+            Object.entries(row).some(
+              ([key, value]) =>
+                !NON_METRIC_ROW_KEYS.has(key) &&
+                !key.startsWith("meta_") &&
+                value !== null &&
+                value !== undefined &&
+                !Number.isNaN(value)
+            )
+          )
+          .map((row) => row.contour_id)
+      );
+      return new Set(contours.filter((c) => !measured.has(c.id)).map((c) => c.id));
+    }
+    // When table rows are intentionally unavailable (e.g. showTable is false due to
+    // study.table=off or lack of export permission, or row request failed), determine
+    // context contours from the active inclusion filters and profile metrics.
+    // Note: Contextual metrics that omit individual contours (such as an only child without
+    // nearest neighbour) remain a known limitation until a backend measured-ID endpoint exists.
+    if (imageSummary) {
+      const measuredLabelIds = new Set(
+        imageSummary.metrics ? Object.keys(imageSummary.metrics).map(String) : []
+      );
+      const isContourMeasured = (c) => {
+        if (c.label_id == null) return false;
+        if (!measuredLabelIds.has(String(c.label_id))) return false;
+        if (!includeUnreviewed) {
+          const reviewed = Array.isArray(c.reviewed_by)
+            ? c.reviewed_by.length > 0
+            : Boolean(c.reviewed);
+          if (!reviewed) return false;
+        }
+        return true;
+      };
+      return new Set(contours.filter((c) => !isContourMeasured(c)).map((c) => c.id));
+    }
+    return new Set();
+  }, [
+    contours,
+    rows,
+    rowsLoadedEmpty,
+    imageSummary,
+    includeUnreviewed,
+  ]);
 
   const colorFor = useCallback(
     (contour) => (contour.label_id ? getLabelColor(contour.label_id) : "#94a3b8"),
@@ -340,9 +442,9 @@ const ImageQuantificationPage = () => {
     (index) => {
       const target = images[index];
       if (!target) return;
-      navigate(`/dataset/${datasetId}/quantifications/image/${target.id}`);
+      navigateToImage(target.id);
     },
-    [images, datasetId, navigate]
+    [images, navigateToImage]
   );
 
   const handleSelectContour = useCallback(
@@ -394,11 +496,11 @@ const ImageQuantificationPage = () => {
     );
   }
 
-  if (error) {
+  if (metaError) {
     return (
       <DatasetManagementLayout>
         <Centered>
-          <p className="text-err">{error}</p>
+          <p className="text-err">{metaError}</p>
         </Centered>
       </DatasetManagementLayout>
     );
@@ -419,6 +521,9 @@ const ImageQuantificationPage = () => {
   }
 
   const scaleStatus = imageSummary?.scale_status;
+  const isImageCalibrated = Boolean(
+    !scaleError && (scaleStatus?.display_physical || (pixelScale?.unit && pixelScale.unit !== "px"))
+  );
   const hasMeasurements =
     imageSummary?.metrics && Object.keys(imageSummary.metrics).length > 0;
 
@@ -590,12 +695,21 @@ const ImageQuantificationPage = () => {
 
           {/* Only shown for an uncalibrated image: dataset-wide inconsistency is not this
               page's problem, since one image is always consistent with itself. */}
-          {scaleStatus && !scaleStatus.display_physical && (
+          {scaleStatus && !isImageCalibrated && !scaleError && (
             <div className="flex items-start gap-3 rounded-lg border border-warnLn bg-warnBg px-4 py-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warn" />
               <p className="text-sm text-warn">
                 This image has no scale, so its measurements are in pixels. Calibrate it to
                 compare it against images measured in real-world units.
+              </p>
+            </div>
+          )}
+
+          {scaleError && (
+            <div className="flex items-start gap-3 rounded-lg border border-warnLn bg-warnBg px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warn" />
+              <p className="text-sm text-warn">
+                Could not load calibration for this image. Scale information is unavailable.
               </p>
             </div>
           )}
@@ -607,14 +721,18 @@ const ImageQuantificationPage = () => {
                 <h3 className="text-sm font-semibold text-t1">Image</h3>
                 <span className="text-xs text-t3 font-mono">
                   {naturalSize ? `${naturalSize.width} × ${naturalSize.height}` : "…"}
-                  {scaleStatus?.display_physical &&
-                    ` · 1 px = ${measuredImage.scale_x} ${measuredImage.unit}`}
+                  {!scaleError && isImageCalibrated && measuredImage.scale_x != null &&
+                    ` · 1 px = ${measuredImage.scale_x} ${measuredImage.unit || scaleStatus?.display_unit || ""}`}
                 </span>
               </div>
 
               <div className="h-[420px] rounded-md overflow-hidden bg-well">
                 {loadingImage ? (
                   <Spinner label="Loading image…" />
+                ) : imageError ? (
+                  <div className="h-full flex flex-col items-center justify-center p-4 text-center">
+                    <p className="text-err text-sm font-medium">{imageError}</p>
+                  </div>
                 ) : (
                   <AnnotationViewerCanvas
                     imageSrc={imageSrc}
@@ -639,9 +757,7 @@ const ImageQuantificationPage = () => {
                 <ImageFilmstrip
                   images={images}
                   selectedId={numericImageId}
-                  onSelect={(image) =>
-                    navigate(`/dataset/${datasetId}/quantifications/image/${image.id}`)
-                  }
+                  onSelect={(image) => navigateToImage(image.id)}
                   size="md"
                 />
               </div>
@@ -649,7 +765,16 @@ const ImageQuantificationPage = () => {
 
             {/* Right: what this image measures, and how that compares. */}
             <div className="space-y-4">
-              {loadingMetrics && !imageSummary ? (
+              {loadingMetrics ? (
+                <Spinner
+                  label="Loading measurements…"
+                  hint="Measurements are computed on demand, so this can take a moment the first time."
+                />
+              ) : metricsError ? (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
+                  <p className="text-err text-sm font-medium">{metricsError}</p>
+                </div>
+              ) : !imageSummary ? (
                 <Spinner
                   label="Loading measurements…"
                   hint="Measurements are computed on demand, so this can take a moment the first time."
@@ -663,6 +788,7 @@ const ImageQuantificationPage = () => {
                     objectCounts={imageSummary?.object_counts_per_label_id}
                     image={measuredImage}
                     scaleStatus={scaleStatus}
+                    scaleError={Boolean(scaleError)}
                   />
                   {featuredMetric && (
                     <LabelComparisonBars
@@ -684,7 +810,14 @@ const ImageQuantificationPage = () => {
             catalogMap={catalogMap}
           />
 
-          {showTable && rows.length > 0 && (
+          {showTable && rowsError && (
+            <div className="flex items-start gap-3 rounded-lg border border-warnLn bg-warnBg px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-warn" />
+              <p className="text-sm text-warn">{rowsError}</p>
+            </div>
+          )}
+
+          {showTable && !rowsError && rows.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">

@@ -2,8 +2,10 @@ import {
   aggregateAllMetrics,
   aggregateMetric,
   aggregateMetricEntry,
+  countMeasuredObjects,
   formatDelta,
   frameCoverage,
+  isAdditiveMetric,
   perLabelMetric,
   pickFeaturedMetric,
   relativeToBaseline,
@@ -174,6 +176,34 @@ describe('pickFeaturedMetric', () => {
     expect(pickFeaturedMetric(metrics, catalog)).toBe('area');
   });
 
+  test('prefers additive scalar metrics (like perimeter/length) over non-additive ones (like circularity)', () => {
+    const extendedCatalog = {
+      ...catalog,
+      circularity: { unit_kind: 'ratio', value_dim: 1 },
+    };
+    const metrics = {
+      1: {
+        circularity: entry(null, 1, 0.8),
+        perimeter: entry('mm', 1, 25),
+      },
+    };
+    expect(pickFeaturedMetric(metrics, extendedCatalog)).toBe('perimeter');
+  });
+
+  test('falls back to non-additive scalar metric (like circularity) when no additive metrics exist', () => {
+    const extendedCatalog = {
+      circularity: { unit_kind: 'ratio', value_dim: 1 },
+      mean_color_rgb: { unit_kind: 'color', value_dim: 3 },
+    };
+    const metrics = {
+      1: {
+        circularity: entry(null, 1, 0.8),
+        mean_color_rgb: entry(null, 1, 1),
+      },
+    };
+    expect(pickFeaturedMetric(metrics, extendedCatalog)).toBe('circularity');
+  });
+
   test('falls back to a scalar metric rather than a colour', () => {
     const metrics = { 1: { mean_color_rgb: entry(null, 1, 1), perimeter: entry('mm', 1, 1) } };
     expect(pickFeaturedMetric(metrics, catalog)).toBe('perimeter');
@@ -181,6 +211,19 @@ describe('pickFeaturedMetric', () => {
 
   test('returns null when nothing is measured', () => {
     expect(pickFeaturedMetric({}, catalog)).toBeNull();
+  });
+});
+
+describe('isAdditiveMetric', () => {
+  test('recognizes additive and non-additive unit kinds', () => {
+    expect(isAdditiveMetric({ unit_kind: 'area' })).toBe(true);
+    expect(isAdditiveMetric({ unit_kind: 'length' })).toBe(true);
+    expect(isAdditiveMetric({ unit_kind: 'count' })).toBe(true);
+    expect(isAdditiveMetric({ unit_kind: 'volume' })).toBe(true);
+    expect(isAdditiveMetric({ unit_kind: 'ratio' })).toBe(false);
+    expect(isAdditiveMetric({ unit_kind: 'intensity' })).toBe(false);
+    expect(isAdditiveMetric({ unit_kind: 'color' })).toBe(false);
+    expect(isAdditiveMetric(null)).toBe(false);
   });
 });
 
@@ -213,5 +256,40 @@ describe('relativeToBaseline / formatDelta', () => {
     expect(relativeToBaseline(12, null)).toBeNull();
     expect(relativeToBaseline(12, 0)).toBeNull();
     expect(formatDelta(null)).toBeNull();
+  });
+});
+
+describe('countMeasuredObjects', () => {
+  test('counts objects across multiple labels with different metrics', () => {
+    const metrics = {
+      1: { area: entry('mm²', 5, 10) },
+      2: { circularity: entry(null, 3, 0.8) },
+    };
+    expect(countMeasuredObjects(metrics)).toBe(8);
+  });
+
+  test('does not double count multiple metrics on the same label', () => {
+    const metrics = {
+      1: {
+        area: entry('mm²', 5, 10),
+        perimeter: entry('mm', 5, 20),
+      },
+    };
+    expect(countMeasuredObjects(metrics)).toBe(5);
+  });
+
+  test('handles empty or missing metrics', () => {
+    expect(countMeasuredObjects(null)).toBe(0);
+    expect(countMeasuredObjects({})).toBe(0);
+    expect(countMeasuredObjects({ 1: {} })).toBe(0);
+  });
+
+  test('can exclude unlabeled objects', () => {
+    const metrics = {
+      1: { area: entry('mm²', 5, 10) },
+      null: { area: entry('mm²', 2, 8) },
+    };
+    expect(countMeasuredObjects(metrics)).toBe(7);
+    expect(countMeasuredObjects(metrics, { includeUnlabeled: false })).toBe(5);
   });
 });

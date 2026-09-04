@@ -15,8 +15,16 @@ import {
  * is not a statement anyone can act on, since the components move independently and a
  * percentage over a channel triple means nothing.
  */
-const DatasetComparison = ({ mine, theirs, unit, valueDim }) => {
+const DatasetComparison = ({ mine, theirs, unit, baselineUnit, valueDim }) => {
   if (valueDim > 1 || mine == null || theirs == null) return null;
+  const myUnit = unit || '';
+  const theirUnit = baselineUnit !== undefined ? (baselineUnit || '') : myUnit;
+  // A dataset comparison is only meaningful when both measurements use the same unit.
+  // For mixed-scale datasets, the dataset summary falls back to pixels while a calibrated
+  // image measures in physical units (e.g. mm² vs px²). Comparing them directly is
+  // misleading, so hide the comparison when units differ.
+  if (myUnit !== theirUnit) return null;
+
   const delta = relativeToBaseline(mine, theirs);
   const text = formatDelta(delta);
   if (!text) return null;
@@ -25,7 +33,7 @@ const DatasetComparison = ({ mine, theirs, unit, valueDim }) => {
     <p className="text-[11px] text-t3 mt-3 pt-2 border-t border-ln">
       Dataset mean{' '}
       <span className="text-t2 tabular-nums">
-        {formatMeasurement(theirs)} {unit}
+        {formatMeasurement(theirs)} {theirUnit}
       </span>{' '}
       ·{' '}
       {/* Neither direction is good or bad — this is a measurement, not a target — so a
@@ -80,6 +88,7 @@ const ImageMetricGrid = ({ imageMetrics, datasetMetrics, catalogMap = {} }) => {
                   mine={entry.components[0]?.mean}
                   theirs={baseline?.components?.[0]?.mean}
                   unit={entry.unit || ''}
+                  baselineUnit={baseline?.unit || ''}
                   valueDim={catalog?.value_dim ?? entry.components.length}
                 />
               }

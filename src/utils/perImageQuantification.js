@@ -82,7 +82,6 @@ export const aggregateMetricEntry = (
 
   return { unit, components };
 };
-
 /**
  * The scalar view of {@link aggregateMetricEntry}: the first component, plus the sum.
  *
@@ -170,12 +169,21 @@ export const perLabelMetric = (metricsByLabelId, metricKey) =>
     .sort((a, b) => b.total - a.total);
 
 /**
+ * Tests whether a metric's values can be meaningfully summed across objects (e.g. area, perimeter).
+ * Non-additive metrics (circularity, mean intensity) should be averaged rather than totalled.
+ */
+export const isAdditiveMetric = (catalogEntry) => {
+  const kind = catalogEntry?.unit_kind;
+  return kind === "area" || kind === "length" || kind === "volume" || kind === "count";
+};
+
+/**
  * The metric the summary cards and the comparison bars are built around.
  *
  * Area first, because it is what an object's size means to most people and it is in every
- * default profile. Failing that, any other area-kind metric, then any single-component
- * numeric one — so a profile that deliberately drops area still gets a populated page
- * rather than four empty cards.
+ * default profile. Failing that, any other additive metric (perimeter/length, count), then
+ * any single-component numeric one — so a profile that deliberately drops area still gets
+ * a populated page rather than four empty cards.
  *
  * @param {Object} metricsByLabelId - The summary's `metrics` mapping.
  * @param {Object} catalogMap - metric_key -> catalog entry.
@@ -194,6 +202,9 @@ export const pickFeaturedMetric = (metricsByLabelId, catalogMap = {}) => {
     keys.find((key) => catalogMap[key]?.unit_kind === kind);
   return (
     byUnitKind("area") ||
+    byUnitKind("length") ||
+    byUnitKind("volume") ||
+    byUnitKind("count") ||
     keys.find((key) => (catalogMap[key]?.value_dim ?? 1) === 1 && catalogMap[key]?.unit_kind !== "color") ||
     null
   );
@@ -265,4 +276,35 @@ export const formatDelta = (fraction) => {
   const percent = fraction * 100;
   const rounded = Math.abs(percent) < 0.1 ? 0 : percent;
   return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} %`;
+};
+
+/**
+ * Total number of distinct objects on the image having at least one measurement.
+ *
+ * Each label's measured count is the maximum count among that label's metrics,
+ * and the image total is the sum over all labels. This avoids undercounting
+ * when metrics are scoped by label (e.g. area only on Cells, intensity on Nuclei)
+ * or when contextual metrics apply to a subset of classes.
+ *
+ * @param {Object} metricsByLabelId - The summary's `metrics` mapping.
+ * @param {Object} [options]
+ * @param {boolean} [options.includeUnlabeled=true]
+ * @returns {number}
+ */
+export const countMeasuredObjects = (metricsByLabelId, { includeUnlabeled = true } = {}) => {
+  if (!metricsByLabelId || typeof metricsByLabelId !== "object") return 0;
+  return Object.entries(metricsByLabelId).reduce((total, [labelId, labelMetrics]) => {
+    if (!includeUnlabeled && labelId === UNLABELED_KEY) return total;
+    if (!labelMetrics || typeof labelMetrics !== "object") return total;
+    let maxForLabel = 0;
+    for (const metricData of Object.values(labelMetrics)) {
+      if (!metricData?.components) continue;
+      for (const comp of metricData.components) {
+        if (typeof comp?.count === "number" && comp.count > maxForLabel) {
+          maxForLabel = comp.count;
+        }
+      }
+    }
+    return total + maxForLabel;
+  }, 0);
 };

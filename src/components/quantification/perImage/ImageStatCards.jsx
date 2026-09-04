@@ -2,8 +2,10 @@ import React from 'react';
 import { Boxes, Ruler, Sigma } from 'lucide-react';
 import {
   aggregateMetric,
+  countMeasuredObjects,
   formatMeasurement,
   frameCoverage,
+  isAdditiveMetric,
 } from '../../../utils/perImageQuantification';
 
 const Card = ({ icon: Icon, label, value, unit, hint }) => (
@@ -23,25 +25,14 @@ const Card = ({ icon: Icon, label, value, unit, hint }) => (
 );
 
 /**
- * The facts about the image itself, as opposed to about its measurements.
+ * Headline stats about the current image.
  *
- * Deliberately only three, and deliberately not any metric's mean: every metric in the
- * profile gets its own card with its own mean, spread and dataset comparison in
- * `ImageMetricGrid` below. What is left here is what that grid cannot say — how many
- * objects there are, how much of the frame they take up, and whether any of the numbers
- * are in real units at all.
- *
- * The total is the one aggregate worth a headline: it is the only number on the page that
- * is a property of the image rather than of its objects, and it is what "31 % of frame"
- * is computed from.
- *
- * @param {Object} props
- * @param {Object} props.imageMetrics - `metrics` from the image-scoped summary.
- * @param {string|null} props.metricKey - The featured metric (area, normally).
- * @param {Object} props.catalog - Catalog entry for that metric.
- * @param {Object} props.objectCounts - `object_counts_per_label_id` for this image.
- * @param {Object} props.image - The image row (`width`, `height`, `scale_x`, `unit`, ...).
- * @param {Object} props.scaleStatus - `scale_status` from the image-scoped summary.
+ * Three cards across the top of the details panel:
+ *   1. Object census: total on the image, and how many the current toggles exclude.
+ *   2. Featured metric: sum of area (or the profile's primary scalar) across the measured
+ *      objects, plus what fraction of the frame they cover when the units allow it.
+ *   3. Scale: the image's physical calibration, or an explicit "Not calibrated" so the
+ *      reader is never left guessing whether a number is in microns or pixels.
  */
 const ImageStatCards = ({
   imageMetrics,
@@ -50,12 +41,24 @@ const ImageStatCards = ({
   objectCounts,
   image,
   scaleStatus,
+  scaleError = false,
 }) => {
   const metricName = catalog?.name || metricKey || 'metric';
   const isArea = catalog?.unit_kind === 'area' || metricKey === 'area';
+  const isAdditive = isAdditiveMetric(catalog) || metricKey === 'area';
 
   const here = metricKey ? aggregateMetric(imageMetrics, metricKey) : null;
   const unit = here?.unit || '';
+  const featuredCount = here?.count || 0;
+
+  // Determine calibration: if scaleStatus reports physical display, or if the image has a
+  // saved pixel scale with a physical unit (not 'px'). This handles the case where all objects
+  // are excluded by filters and scaleStatus falls back to display_physical: false even though
+  // the image itself has a calibrated pixel scale.
+  const isCalibrated = Boolean(
+    !scaleError && (scaleStatus?.display_physical || (image?.unit && image.unit !== 'px'))
+  );
+  const displayUnit = (scaleStatus?.display_physical ? scaleStatus.display_unit : image?.unit) || '';
 
   // The census counts every object on the image, including ones the inclusion toggles
   // exclude from the measurements — so the two numbers can legitimately disagree, and the
@@ -64,9 +67,15 @@ const ImageStatCards = ({
     (sum, counts) => sum + (counts?.total || 0),
     0
   );
-  const measured = here?.count || 0;
+  // Count measured objects across all labels and metrics in the profile.
+  // Using here.count (the featured metric) undercounts whenever a profile scopes
+  // metrics by label or has contextual metrics, falsely reporting validly measured
+  // objects as excluded.
+  const measured = countMeasuredObjects(imageMetrics);
   const excluded = Math.max(0, census - measured);
-  const coverage = isArea ? frameCoverage(here?.total, image, scaleStatus) : null;
+  const coverage = isArea && !scaleError && (!isCalibrated || image?.scale_x != null)
+    ? frameCoverage(here?.total, image, { display_physical: isCalibrated })
+    : null;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -82,26 +91,34 @@ const ImageStatCards = ({
       />
       <Card
         icon={Sigma}
-        label={`Total ${metricName.toLowerCase()}`}
-        value={formatMeasurement(here?.total)}
+        label={isAdditive ? `Total ${metricName.toLowerCase()}` : `Mean ${metricName.toLowerCase()}`}
+        value={formatMeasurement(isAdditive ? here?.total : here?.mean)}
         unit={unit}
         hint={
-          coverage != null
-            ? `${(coverage * 100).toFixed(1)} % of frame`
-            : `summed over ${measured.toLocaleString()} object${measured === 1 ? '' : 's'}`
+          isAdditive
+            ? (coverage != null
+                ? `${(coverage * 100).toFixed(1)} % of frame`
+                : `summed over ${featuredCount.toLocaleString()} object${featuredCount === 1 ? '' : 's'}`)
+            : (featuredCount > 0
+                ? `averaged over ${featuredCount.toLocaleString()} object${featuredCount === 1 ? '' : 's'}`
+                : '')
         }
       />
       <Card
         icon={Ruler}
         label="Scale"
         value={
-          scaleStatus?.display_physical
-            ? `1 px = ${formatMeasurement(image?.scale_x)}`
+          scaleError
+            ? 'Scale unavailable'
+            : isCalibrated
+            ? (image?.scale_x != null ? `1 px = ${formatMeasurement(image?.scale_x)}` : '…')
             : 'Not calibrated'
         }
-        unit={scaleStatus?.display_physical ? scaleStatus.display_unit : ''}
+        unit={!scaleError && isCalibrated && image?.scale_x != null ? displayUnit : ''}
         hint={
-          scaleStatus?.display_physical
+          scaleError
+            ? 'could not load calibration'
+            : isCalibrated
             ? 'measurements are in real-world units'
             : 'measurements are in pixels'
         }

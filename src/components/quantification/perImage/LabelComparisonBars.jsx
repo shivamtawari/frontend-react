@@ -34,13 +34,32 @@ const LabelComparisonBars = ({
   const here = perLabelMetric(imageMetrics, metricKey);
   if (here.length === 0) return null;
 
+  const baselineEntries = perLabelMetric(datasetMetrics, metricKey);
   const baselineByLabel = Object.fromEntries(
-    perLabelMetric(datasetMetrics, metricKey).map((entry) => [entry.labelId, entry.mean])
+    baselineEntries.map((entry) => [
+      entry.labelId,
+      { mean: entry.mean, unit: entry.unit || '' },
+    ])
   );
+
+  // A baseline tick is only meaningful when it is measured in the exact same unit as the
+  // image's own measurement for that label. For mixed-scale datasets, the dataset summary
+  // falls back to pixels while a calibrated image measures in physical units (e.g. mm² vs px²).
+  // In that case comparing them on the same axis is invalid and would distort both the scale
+  // and the ticks.
+  const comparableBaselines = here.map((entry) => {
+    const baseline = baselineByLabel[entry.labelId];
+    return baseline && (entry.unit || '') === baseline.unit ? baseline.mean : 0;
+  });
+
+  const hasAnyComparableBaseline = here.some((entry) => {
+    const baseline = baselineByLabel[entry.labelId];
+    return baseline && (entry.unit || '') === baseline.unit;
+  });
 
   const scaleMax = Math.max(
     ...here.map((entry) => entry.mean),
-    ...here.map((entry) => baselineByLabel[entry.labelId] || 0)
+    ...comparableBaselines
   );
   const asPercent = (value) => (scaleMax > 0 ? Math.min(100, (value / scaleMax) * 100) : 0);
 
@@ -52,13 +71,14 @@ const LabelComparisonBars = ({
       <div className="flex items-center gap-3 mb-4">
         <div className="h-1 w-8 bg-accent rounded-full flex-shrink-0" />
         <h3 className="text-sm font-semibold text-t2 uppercase tracking-wide">
-          Mean {metricName.toLowerCase()} by label · this image vs dataset
+          Mean {metricName.toLowerCase()} by label{hasAnyComparableBaseline ? ' · this image vs dataset' : ''}
         </h3>
       </div>
 
       <div className="space-y-3">
         {here.map((entry) => {
           const baseline = baselineByLabel[entry.labelId];
+          const canCompare = baseline != null && (entry.unit || '') === baseline.unit;
           const name = labelIdToName[entry.labelId] || `Label ${entry.labelId}`;
           const color = getLabelColor(Number(entry.labelId));
           return (
@@ -68,7 +88,7 @@ const LabelComparisonBars = ({
                   {name} <span className="text-t3">n {entry.count}</span>
                 </span>
                 <span className="text-sm font-medium text-t1 tabular-nums flex-shrink-0">
-                  {formatMeasurement(entry.mean)} {unit}
+                  {formatMeasurement(entry.mean)} {entry.unit || unit}
                 </span>
               </div>
               <div className="relative h-2.5 w-full rounded-full bg-well overflow-hidden">
@@ -76,14 +96,14 @@ const LabelComparisonBars = ({
                   className="absolute inset-y-0 left-0 rounded-full"
                   style={{ width: `${asPercent(entry.mean)}%`, backgroundColor: color }}
                 />
-                {baseline != null && (
+                {canCompare && (
                   // Drawn over the bar rather than beside it, so "this image is above the
                   // dataset" is the tick being behind the bar's end — readable without a
                   // second number to subtract.
                   <div
                     className="absolute inset-y-0 w-0.5 bg-t2"
-                    style={{ left: `calc(${asPercent(baseline)}% - 1px)` }}
-                    title={`Dataset mean: ${formatMeasurement(baseline)} ${unit}`}
+                    style={{ left: `calc(${asPercent(baseline.mean)}% - 1px)` }}
+                    title={`Dataset mean: ${formatMeasurement(baseline.mean)} ${baseline.unit}`}
                   />
                 )}
               </div>
@@ -93,7 +113,9 @@ const LabelComparisonBars = ({
       </div>
 
       <p className="text-[11px] text-t3 mt-3">
-        Bar = this image · tick = dataset mean for the same label
+        {hasAnyComparableBaseline
+          ? 'Bar = this image · tick = dataset mean for the same label'
+          : 'Bar = this image'}
       </p>
     </div>
   );
