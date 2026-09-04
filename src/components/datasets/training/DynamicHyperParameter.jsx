@@ -62,6 +62,7 @@ export default function DynamicHyperParameter({
   onChange,
   compact = false,
   idPrefix = "",
+  disabled = false,
 }) {
   const { key, label, description, type, options, min_value, max_value, step } = param;
   const displayLabel = label || key;
@@ -79,9 +80,10 @@ export default function DynamicHyperParameter({
       <select
         id={inputId}
         aria-label={label || key}
+        disabled={disabled}
         value={current !== undefined && current !== null ? String(current) : ""}
         onChange={(e) => onChange(key, coerceValue(e.target.value, type))}
-        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent"
+        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {options.map((opt) => (
           <option key={String(opt)} value={String(opt)}>{String(opt)}</option>
@@ -94,9 +96,10 @@ export default function DynamicHyperParameter({
         id={inputId}
         aria-label={label || key}
         type="checkbox"
+        disabled={disabled}
         checked={Boolean(current)}
         onChange={(e) => onChange(key, e.target.checked)}
-        className="h-4 w-4 rounded border-ln2 text-ac focus:ring-ac"
+        className="h-4 w-4 rounded border-ln2 text-ac focus:ring-ac disabled:opacity-50 disabled:cursor-not-allowed"
       />
     );
   } else if (isSlider) {
@@ -106,12 +109,13 @@ export default function DynamicHyperParameter({
           id={inputId}
           aria-label={label || key}
           type="range"
+          disabled={disabled}
           min={min_value}
           max={max_value}
           step={step ?? (type === "int" ? 1 : 0.01)}
           value={current ?? min_value}
           onChange={(e) => onChange(key, coerceValue(e.target.value, type))}
-          className="flex-1 accent-ac"
+          className="flex-1 accent-ac disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <span className="text-xs font-mono font-semibold w-12 text-right text-t1">{current}</span>
       </div>
@@ -122,12 +126,13 @@ export default function DynamicHyperParameter({
         id={inputId}
         aria-label={label || key}
         type="number"
+        disabled={disabled}
         min={min_value !== null && min_value !== undefined ? min_value : undefined}
         max={max_value !== null && max_value !== undefined ? max_value : undefined}
         step={step ?? (type === "int" ? 1 : "any")}
         value={current !== undefined && current !== null ? current : ""}
         onChange={(e) => onChange(key, coerceValue(e.target.value, type))}
-        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent"
+        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
       />
     );
   } else {
@@ -136,9 +141,10 @@ export default function DynamicHyperParameter({
         id={inputId}
         aria-label={label || key}
         type="text"
+        disabled={disabled}
         value={current !== undefined && current !== null ? String(current) : ""}
         onChange={(e) => onChange(key, coerceValue(e.target.value, type))}
-        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent"
+        className="w-full px-2.5 py-1.5 text-xs sm:text-sm border border-ln2 rounded-lg bg-well text-t1 focus:ring-2 focus:ring-ac focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
       />
     );
   }

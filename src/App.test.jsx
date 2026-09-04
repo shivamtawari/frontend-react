@@ -1,8 +1,10 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders Coral Segmentation header', () => {
+test('renders landing page with sign-in form', () => {
   render(<App />);
-  const headerElement = screen.getByRole('heading', { name: /Coral Segmentation - Image Viewer with Prompting/i });
-  expect(headerElement).toBeInTheDocument();
+  expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
 });

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
-import { BookOpen, User, Brain, Search, Star, ArrowLeft, Loader2, GraduationCap, ArrowUpDown } from "lucide-react";
+import { User, Brain, Search, Star, ArrowLeft, Loader2, GraduationCap, ArrowUpDown } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import AuthButtons from "../components/auth/AuthButtons";
+import DocsLink from "../components/ui/DocsLink";
 import ReportBugLink from "../components/ui/ReportBugLink";
 import ModelChip from "../components/models/ModelChip";
 import ModelDetailPanel from "../components/models/ModelDetailPanel";
@@ -101,6 +102,11 @@ const transformModel = (model) => ({
 
 const POLL_INTERVAL_MS = 4000;
 
+const normalizeFavorites = (result) =>
+  result?.success && result?.favorites && typeof result.favorites === "object"
+    ? result.favorites
+    : {};
+
 const ModelZooPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -126,6 +132,17 @@ const ModelZooPage = () => {
   const datasetIdFromState = location.state?.datasetId || datasetId;
   const isFromDatasetManagement = !!datasetIdFromState;
 
+  const resyncFavorites = useCallback(async () => {
+    try {
+      const result = await getModelFavorites();
+      if (!result?.success) return false;
+      setFavorites(normalizeFavorites(result));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, []);
+
   const refetchModels = useCallback(async () => {
     try {
       const result = await getAllModels();
@@ -143,20 +160,29 @@ const ModelZooPage = () => {
     const load = async () => {
       setIsLoading(true);
       setError(null);
-      try {
-        const [modelsResult, favResult] = await Promise.all([getAllModels(), getModelFavorites()]);
-        if (cancelled) return;
-        if (modelsResult.success && modelsResult.models) {
-          setModels(modelsResult.models.map(transformModel));
+      const [modelsResult, favoritesResult] = await Promise.allSettled([
+        getAllModels(),
+        getModelFavorites(),
+      ]);
+      if (cancelled) return;
+
+      if (modelsResult.status === "fulfilled") {
+        const result = modelsResult.value;
+        if (result?.success && result.models) {
+          setModels(result.models.map(transformModel));
         } else {
-          setError(modelsResult.error || "Failed to load models from backend");
+          setError(result?.error || "Failed to load models from backend");
         }
-        setFavorites(favResult.favorites || {});
-      } catch (err) {
-        if (!cancelled) setError(err.message || "Failed to load models");
-      } finally {
-        if (!cancelled) setIsLoading(false);
+      } else {
+        setError(modelsResult.reason?.message || "Failed to load models");
       }
+
+      if (favoritesResult.status === "fulfilled") {
+        setFavorites(normalizeFavorites(favoritesResult.value));
+      } else {
+        setFavorites({});
+      }
+      setIsLoading(false);
     };
     load();
     return () => { cancelled = true; };
@@ -200,45 +226,57 @@ const ModelZooPage = () => {
   }, [trainingJobs, refetchModels]);
 
   const isFavorite = useCallback(
-    (model) => (model.tasks || []).some((task) => favorites[task] === model.identifier),
-    [favorites]
+    (model) => {
+      if (selectedTask !== "all") {
+        return favorites[selectedTask] === model.identifier;
+      }
+      return (model.tasks || []).some((task) => favorites[task] === model.identifier);
+    },
+    [favorites, selectedTask]
   );
 
-  // Star toggles the model as favorite for *each* task it serves. Optimistic:
-  // update local state first, then persist per task.
+  // Star toggles the model as personal favorite for a specific task.
   const handleToggleFavorite = useCallback(
-    async (model) => {
+    async (model, specificTask = null) => {
       const id = model.identifier;
-      const tasks = model.tasks || [];
-      const wasFavorite = tasks.some((task) => favorites[task] === id);
+      const targetTask =
+        specificTask ||
+        (selectedTask !== "all"
+          ? selectedTask
+          : model.tasks?.length === 1
+          ? model.tasks[0]
+          : null);
+
+      if (!targetTask) return;
+
+      const wasFavorite = favorites[targetTask] === id;
 
       setFavorites((prev) => {
         const next = { ...prev };
-        for (const task of tasks) {
-          if (wasFavorite) {
-            if (next[task] === id) delete next[task];
-          } else {
-            next[task] = id;
-          }
+        if (wasFavorite) {
+          if (next[targetTask] === id) delete next[targetTask];
+        } else {
+          next[targetTask] = id;
         }
         return next;
       });
 
-      const ops = tasks
-        .map((task) => {
-          if (wasFavorite) return favorites[task] === id ? clearModelFavorite(task) : null;
-          return setModelFavorite(task, id);
-        })
-        .filter(Boolean);
-      const results = await Promise.allSettled(ops);
-      if (results.some((r) => r.status === "rejected" || r.value?.success === false)) {
-        // Re-sync from the server on any failure.
-        const fresh = await getModelFavorites();
-        setFavorites(fresh.favorites || {});
+      let result;
+      try {
+        result = wasFavorite
+          ? await clearModelFavorite(targetTask)
+          : await setModelFavorite(targetTask, id);
+      } catch (_) {
+        // Treat rejected API calls the same as an explicit failure response.
+      }
+
+      if (!result?.success) {
+        const resynced = await resyncFavorites();
+        if (!resynced) setFavorites(favorites);
         addToast({ message: "Couldn't update favorites. Try again.", type: "error" });
       }
     },
-    [favorites, addToast]
+    [favorites, selectedTask, addToast, resyncFavorites]
   );
 
   const handleModelAction = (model, actionType) => {
@@ -455,6 +493,8 @@ const ModelZooPage = () => {
                   <ModelDetailPanel
                     model={selectedModel}
                     isFavorite={selectedModel ? isFavorite(selectedModel) : false}
+                    selectedTask={selectedTask}
+                    favorites={favorites}
                     onToggleFavorite={handleToggleFavorite}
                     onAction={handleModelAction}
                   />
@@ -526,6 +566,8 @@ const ModelZooPage = () => {
                           model={model}
                           isSelected={model.identifier === selectedModelId}
                           isFavorite={isFavorite(model)}
+                          selectedTask={selectedTask}
+                          favorites={favorites}
                           onSelect={(m) => setSelectedModelId(m.identifier)}
                           onToggleFavorite={handleToggleFavorite}
                         />
@@ -592,13 +634,7 @@ const ModelZooPage = () => {
                   <span className="font-medium">{user.username}</span>
                 </div>
               )}
-              <button
-                onClick={() => navigate("/docs")}
-                className="flex items-center gap-[7px] bg-hv hover:bg-hv2 text-t2 hover:text-t1 py-2 px-4 rounded-6 transition-colors duration-150"
-              >
-                <BookOpen className="w-4 h-4" />
-                <span>Documentation</span>
-              </button>
+              <DocsLink className="flex items-center gap-[7px] bg-hv hover:bg-hv2 text-t2 hover:text-t1 py-2 px-4 rounded-6 transition-colors duration-150" />
               <ThemeToggle />
           <ReportBugLink />
               <AuthButtons showLogoutOnly={true} />

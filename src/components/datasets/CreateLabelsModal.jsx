@@ -165,7 +165,7 @@ const CreateLabelsModal = ({ isOpen, onClose, dataset, onLabelsCreated }) => {
       type="text"
       value={label.name}
       onChange={(e) => handleLabelNameChange(label.id, e.target.value)}
-      placeholder={depth > 0 ? "Sublabel name" : "Label name"}
+      placeholder={depth > 0 ? "Part name" : "Label name"}
       className="flex-1 px-2 py-1 border-0 bg-transparent focus:outline-none focus:ring-0"
     />
   );

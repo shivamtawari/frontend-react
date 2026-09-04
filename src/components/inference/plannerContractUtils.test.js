@@ -95,9 +95,10 @@ describe("plannerContractUtils", () => {
 
   it("builds conditioning for user-selectable count clamped to bounds", () => {
     const contract = {
+      task: "cross-image-suggestion",
       conditioning: {
-        kind: "instances",
-        unit: "instance",
+        kind: "reference_images",
+        unit: "image",
         min_units: 2,
         max_units: 4,
         user_selectable_count: true,
@@ -107,6 +108,22 @@ describe("plannerContractUtils", () => {
       count: 4, // 5 clamped to max_units 4
       strategy: "global_scene",
     });
+  });
+
+  it("does not inject count or retrieval strategy for within-image instance suggestion with arbitrary exemplars", () => {
+    const contract = {
+      task: "instance-suggestion",
+      conditioning: {
+        kind: "instances",
+        unit: "instance",
+        min_units: 1,
+        max_units: null,
+        user_selectable_count: false,
+      },
+    };
+    const conditioning = getDefaultConditioning(contract, sampleStrategies);
+    expect(conditioning.count).toBeUndefined();
+    expect(conditioning.strategy).toBeUndefined();
   });
 
   it("initializes a complete canonical step with legacy compatibility fields", () => {

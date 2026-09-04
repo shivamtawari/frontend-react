@@ -58,7 +58,12 @@ function Stat({ icon: Icon, value, label, tone = "text-t1" }) {
  * actually being respected — level 2 stays empty until level 1 is full.
  */
 export default function InferenceProgressPanel({
-    job, onCancel, isCancelling, onReview, onDelete, onOpenImage,
+    job,
+    onCancel,
+    isCancelling,
+    onReview,
+    onDelete,
+    onOpenImage,
 }) {
     const [failedItems, setFailedItems] = useState([]);
 

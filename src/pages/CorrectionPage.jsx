@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   CheckCircle2,
@@ -20,6 +19,7 @@ import { useCorrection } from '../contexts/CorrectionContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { Permission } from '../utils/permissions';
 import RoleBadge from '../components/datasets/RoleBadge';
+import DatasetGalleryHeader from '../components/datasets/gallery/DatasetGalleryHeader';
 
 const readableError = (err, fallback) =>
   (err?.message || '').replace(/^API Error:\s*/i, '') || fallback;
@@ -119,20 +119,15 @@ const CorrectionPage = () => {
 
   return (
     <div className="h-screen flex flex-col bg-well">
+      <DatasetGalleryHeader dataset={dataset} />
+
       <div className="bg-p1 border-b border-ln flex-shrink-0">
         <div className="px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => navigate(`/dataset/${datasetId}/datamanagement`)}
-              className="flex items-center gap-2 text-t2 hover:text-ac transition-colors duration-150 flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="hidden sm:inline">Back</span>
-            </button>
-            <div className="h-6 w-px bg-ln flex-shrink-0" />
             <Wrench className="w-5 h-5 flex-shrink-0 text-ac" />
+            {/* Going back, and the dataset's name, are the top bar's job now. */}
             <h1 className="text-lg font-semibold tracking-tight text-t1 truncate">
-              Correct {dataset?.name ? `· ${dataset.name}` : ''}
+              Correct
             </h1>
             {role && <RoleBadge role={role} showDescription />}
           </div>

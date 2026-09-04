@@ -61,6 +61,7 @@ const LabelsTab = () => {
   const { currentDataset } = useDataset();
   const { addToast } = useToast();
 
+
   const [collapsed, setCollapsed] = useState({});
   const [swatchFor, setSwatchFor] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -135,6 +136,8 @@ const LabelsTab = () => {
           </button>
         </div>
       )}
+
+
 
       <div className="flex-1 min-h-0 overflow-y-auto px-[8px] pb-[10px]">
         {rows.length === 0 ? (
@@ -211,6 +214,8 @@ const LabelsTab = () => {
                   <span className="font-mono text-meta text-t3 tabular-nums flex-none">
                     {count}
                   </span>
+
+
 
                   <button
                     type="button"

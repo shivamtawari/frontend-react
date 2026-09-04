@@ -364,7 +364,7 @@ const ActionBar = () => {
           variant={canRunAI ? 'primary' : undefined}
           disabled={!canRunAI}
           title={runAIBlockedReason || undefined}
-          onClick={runSegmentation}
+          onClick={() => runSegmentation()}
         />
       </>
     );

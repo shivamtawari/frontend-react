@@ -142,6 +142,18 @@ describe("LabelModelPlanner", () => {
     },
   };
 
+  const renderPlanner = ({ models: plannerModels, steps, onChange, ...props }) =>
+    render(
+      <LabelModelPlanner
+        labelsById={labelsById}
+        models={plannerModels}
+        strategies={strategies}
+        steps={steps}
+        onChange={onChange}
+        {...props}
+      />
+    );
+
   it("groups labels by hierarchy depth correctly", () => {
     const levels = groupLabelsByLevel(labelsById);
     expect(levels).toHaveLength(2);
@@ -178,15 +190,7 @@ describe("LabelModelPlanner", () => {
       top_k: 1,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={models}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models, steps: [step], onChange });
 
     // Strategy selector is present
     expect(screen.getByRole("combobox", { name: /retrieval strategy for cell/i })).toBeInTheDocument();
@@ -238,15 +242,7 @@ describe("LabelModelPlanner", () => {
       top_k: 5,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={[unboundedModel]}
-        strategies={strategies}
-        steps={[step]}
-        onChange={jest.fn()}
-      />
-    );
+    renderPlanner({ models: [unboundedModel], steps: [step], onChange: jest.fn() });
 
     const countInput = screen.getByRole("spinbutton", { name: /instances for cell/i });
     expect(countInput).toBeInTheDocument();
@@ -276,15 +272,7 @@ describe("LabelModelPlanner", () => {
       top_k: 5,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={[legacyCrossImageModel]}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models: [legacyCrossImageModel], steps: [step], onChange });
 
     const strategySelect = screen.getByRole("combobox", {
       name: /retrieval strategy for cell/i,
@@ -333,15 +321,12 @@ describe("LabelModelPlanner", () => {
       },
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={[ordinaryInstanceModel]}
-        strategies={strategies}
-        steps={[step]}
-        onChange={jest.fn()}
-      />
-    );
+    renderPlanner({
+      models: [ordinaryInstanceModel],
+      steps: [step],
+      onChange: jest.fn(),
+      allowedTasks: ["instance-suggestion"],
+    });
 
     expect(screen.getByRole("spinbutton", { name: /instances for cell/i })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /retrieval strategy for cell/i })).not.toBeInTheDocument();
@@ -362,15 +347,7 @@ describe("LabelModelPlanner", () => {
       top_k: 5,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={models}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models, steps: [step], onChange });
 
     // No exemplar/strategy selector
     expect(screen.queryByRole("combobox", { name: /retrieval strategy/i })).not.toBeInTheDocument();
@@ -393,15 +370,7 @@ describe("LabelModelPlanner", () => {
       min_confidence: 0.2,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={[legacyModel]}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models: [legacyModel], steps: [step], onChange });
 
     const confidenceInput = screen.getByRole("spinbutton", {
       name: /min\. confidence for cell/i,
@@ -435,15 +404,7 @@ describe("LabelModelPlanner", () => {
       top_k: 5,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={models}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models, steps: [step], onChange });
 
     // Text prompt input is rendered
     const textInput = screen.getByRole("textbox", { name: /prompt for cell/i });
@@ -466,15 +427,7 @@ describe("LabelModelPlanner", () => {
   it("initializes defaults and clears stale inputs when selecting a model", () => {
     const onChange = jest.fn();
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={models}
-        strategies={strategies}
-        steps={[]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models, steps: [], onChange });
 
     const modelSelect = screen.getByRole("combobox", { name: /model for cell/i });
     fireEvent.change(modelSelect, { target: { value: "cross-image-suggestion::sam3-incontext" } });
@@ -515,15 +468,7 @@ describe("LabelModelPlanner", () => {
       top_k: 1,
     };
 
-    render(
-      <LabelModelPlanner
-        labelsById={labelsById}
-        models={models}
-        strategies={strategies}
-        steps={[step]}
-        onChange={onChange}
-      />
-    );
+    renderPlanner({ models, steps: [step], onChange });
 
     const slider = screen.getByRole("slider", { name: /detection sensitivity/i });
     fireEvent.change(slider, { target: { value: "0.85" } });
@@ -538,5 +483,44 @@ describe("LabelModelPlanner", () => {
         }),
       })
     );
+  });
+
+  it("excludes interactive models from the batch planner dropdown", () => {
+    const mixedModels = [
+      {
+        registry_key: "sam2-prompted",
+        name: "SAM 2 Prompted",
+        task: "prompted-segmentation",
+        label_ids: [],
+      },
+      {
+        registry_key: "sam3-intra",
+        name: "SAM 3 Intra",
+        task: "instance-suggestion",
+        label_ids: [],
+      },
+      {
+        registry_key: "m2f-batch",
+        name: "Mask2Former Batch",
+        task: "instance-segmentation",
+        label_ids: [],
+      },
+      {
+        registry_key: "sam3-cross",
+        name: "SAM 3 Cross Exemplar",
+        task: "cross-image-suggestion",
+        label_ids: [],
+      },
+    ];
+
+    renderPlanner({ models: mixedModels, steps: [], onChange: jest.fn() });
+
+    const cellSelect = screen.getByLabelText("Model for cell");
+    const optionTexts = Array.from(cellSelect.options).map((opt) => opt.textContent);
+
+    expect(optionTexts).toContain("Mask2Former Batch");
+    expect(optionTexts.some((t) => t.includes("SAM 3 Cross Exemplar"))).toBe(true);
+    expect(optionTexts).not.toContain("SAM 2 Prompted");
+    expect(optionTexts).not.toContain("SAM 3 Intra");
   });
 });

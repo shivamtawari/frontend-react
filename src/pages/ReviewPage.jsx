@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardCheck, Loader2 } from 'lucide-react';
 import * as api from '../api';
 import { fetchReviewSummary, buildReviewQueue } from '../api/reviews';
@@ -9,6 +9,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { Permission } from '../utils/permissions';
 import { extractLabelsFromResponse } from '../utils/labelHierarchy';
 import RoleBadge from '../components/datasets/RoleBadge';
+import DatasetGalleryHeader from '../components/datasets/gallery/DatasetGalleryHeader';
 import ReviewSetup from '../components/review/ReviewSetup';
 import ReviewSession from '../components/review/ReviewSession';
 
@@ -26,7 +27,6 @@ const readableError = (err, fallback) =>
  */
 const ReviewPage = () => {
   const { datasetId } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuth();
   const { datasets } = useDataset();
@@ -105,22 +105,31 @@ const ReviewPage = () => {
 
   return (
     <div className="h-screen flex flex-col bg-well">
+      <DatasetGalleryHeader dataset={dataset} />
+
       <div className="bg-p1 border-b border-ln flex-shrink-0">
         <div className="px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() =>
-                queue ? handleExitSession() : navigate(`/dataset/${datasetId}/datamanagement`)
-              }
-              className="flex items-center gap-2 text-t2 hover:text-ac transition-colors duration-150 flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="hidden sm:inline">{queue ? 'End session' : 'Back'}</span>
-            </button>
-            <div className="h-6 w-px bg-ln flex-shrink-0" />
+            {/* The "Back" this replaced is the top bar's job now. Ending a
+                session is not navigation — it drops the queue and stays — so
+                that half of the button stays here, and only while it applies. */}
+            {queue && (
+              <>
+                <button
+                  onClick={handleExitSession}
+                  className="flex items-center gap-2 text-t2 hover:text-ac transition-colors duration-150 flex-shrink-0"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                  <span className="hidden sm:inline">End session</span>
+                </button>
+                <div className="h-6 w-px bg-ln flex-shrink-0" />
+              </>
+            )}
             <ClipboardCheck className="w-5 h-5 flex-shrink-0 text-ac" />
+            {/* The dataset is named in the top bar; repeating it here read as
+                a breadcrumb to a page you were already on. */}
             <h1 className="text-lg font-semibold tracking-tight text-t1 truncate">
-              Review {dataset?.name ? `· ${dataset.name}` : ''}
+              Review
             </h1>
             {role && <RoleBadge role={role} showDescription />}
           </div>

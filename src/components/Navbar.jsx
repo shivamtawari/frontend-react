@@ -1,8 +1,9 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Database, BookOpen, User, Brain } from "lucide-react";
+import { Database, User, Brain } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import AuthButtons from "./auth/AuthButtons";
+import DocsLink from "./ui/DocsLink";
 import ReportBugLink from "./ui/ReportBugLink";
 import ThemeToggle from "./ui/ThemeToggle";
 import Wordmark from './Wordmark';
@@ -76,13 +77,7 @@ const Navbar = () => {
               <span>Models</span>
             </button>
 
-            <button
-              onClick={() => navigate('/docs')}
-              className={navItemClass(isActive('/docs'))}
-            >
-              <BookOpen className="w-[14px] h-[14px]" />
-              <span>Documentation</span>
-            </button>
+            <DocsLink className={navItemClass(false)} />
 
             <ReportBugLink
               className={navItemClass(false)}

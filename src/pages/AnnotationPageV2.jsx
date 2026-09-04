@@ -17,6 +17,7 @@ import { fetchLabels } from '../api/labels';
 import { extractLabelsFromResponse } from '../utils/labelHierarchy';
 import { SERVER_MESSAGE_TYPES } from '../utils/messageTypes';
 import websocketService from '../services/websocket';
+import { AnnotationRoutingPolicyProvider } from '../contexts/AnnotationRoutingPolicyContext';
 
 const AnnotationPageV2 = () => {
   const { datasetId, imageId: urlImageId } = useParams();
@@ -44,6 +45,10 @@ const AnnotationPageV2 = () => {
   const cachedLabelsMap = useDatasetLabelsMap();
   const cachedLabels = useDatasetLabels();
   const { currentDataset, datasets } = useDataset();
+  // /annotate-v2 has no dataset route segment; use the dataset selected by the
+  // loader once it becomes available while preserving the URL id for normal
+  // dataset-scoped annotation routes.
+  const effectiveDatasetId = datasetId ?? currentDataset?.id;
   // Resolve from the list rather than currentDataset: the list entries carry
   // my_permissions, and currentDataset may not be the one in the URL yet.
   const routeDataset = React.useMemo(
@@ -177,13 +182,15 @@ const AnnotationPageV2 = () => {
   }
 
   return (
-    <DatasetLoader>
-      {/* The workspace shell carries its own toolbar (app menu, breadcrumb and
-          account chip), so the app navbar is not rendered here. */}
-      <ResponsiveWrapper>
-        <MainLayout />
-      </ResponsiveWrapper>
-    </DatasetLoader>
+    <AnnotationRoutingPolicyProvider datasetId={effectiveDatasetId}>
+      <DatasetLoader>
+        {/* The workspace shell carries its own toolbar (app menu, breadcrumb and
+            account chip), so the app navbar is not rendered here. */}
+        <ResponsiveWrapper>
+          <MainLayout />
+        </ResponsiveWrapper>
+      </DatasetLoader>
+    </AnnotationRoutingPolicyProvider>
   );
 };
 

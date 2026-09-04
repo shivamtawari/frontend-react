@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import annotationSession from '../services/annotationSession';
 import { pixelToNormalized } from '../utils/coordinateUtils';
+import { useDataset } from '../contexts/DatasetContext';
 import {
   useAIPrompts,
   usePromptedModel,
@@ -17,7 +19,20 @@ import {
   useSetCurrentTool,
   useSetPromptedModel,
   useSyncEditModeDraftFromRefinement,
+  useAvailablePromptedModels,
+  useActiveLabelId,
 } from '../stores/selectors/annotationSelectors';
+import { useAnnotationRoutingPolicy } from '../contexts/AnnotationRoutingPolicyContext';
+import { matchesModelKey, resolveRoutingBinding } from '../utils/inferenceRouting';
+
+const PROMPTED_SEGMENTATION_TASK = 'prompted-segmentation';
+const ROUTING_POLICY_LOADING_ERROR = 'Routing policy is still loading. Please try again in a moment.';
+const isRoutingInputs = (value) =>
+  value != null &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  (Object.prototype.hasOwnProperty.call(value, 'conditioning') ||
+    Object.prototype.hasOwnProperty.call(value, 'parameters'));
 
 /**
  * Normalize contour data from the backend.
@@ -37,6 +52,8 @@ const normalizeContourData = (data) => {
  */
 const useAISegmentation = () => {
   const [error, setError] = useState(null);
+  const { datasetId: routeDatasetId } = useParams();
+  const { currentDataset } = useDataset();
 
   // Store state
   const prompts = useAIPrompts();
@@ -45,6 +62,14 @@ const useAISegmentation = () => {
   const currentImage = useCurrentImage();
   const imageObject = useImageObject();
   const objectsList = useObjectsList();
+  const availablePromptedModels = useAvailablePromptedModels();
+  const activeLabelId = useActiveLabelId();
+  const datasetId =
+    currentImage?.dataset_id ??
+    (routeDatasetId ? parseInt(routeDatasetId, 10) : null) ??
+    currentDataset?.id ??
+    null;
+  const { policy, policyLoading } = useAnnotationRoutingPolicy(datasetId);
 
   // Store actions
   // Prompts that produced an object are spent, not discarded — see the slice.
@@ -112,12 +137,25 @@ const useAISegmentation = () => {
   /**
    * Run AI segmentation via WebSocket
    */
-  const runSegmentation = useCallback(async () => {
+  const runSegmentation = useCallback(async (explicitInputs = null) => {
+    const requestedInputs = isRoutingInputs(explicitInputs) ? explicitInputs : null;
+    const hasExplicitInputs = requestedInputs !== null;
+    const policyLoadingForDataset = datasetId != null && policyLoading;
+
     // Note: promptedModelId is just a string ID, we don't need to set model_status here
     // The status is handled by the backend
     if (!currentImage || !promptedModelId || prompts.length === 0) {
       setError('Missing required data: image, model, or prompts');
       return { success: false, error: 'Missing required data' };
+    }
+
+    // A model selected from the dataset policy can arrive before this hook's
+    // policy request. Do not run it without the saved contract inputs during
+    // that short window. Explicit callers already own their inputs and are
+    // allowed to proceed.
+    if (!hasExplicitInputs && policyLoadingForDataset) {
+      setError(ROUTING_POLICY_LOADING_ERROR);
+      return { success: false, error: ROUTING_POLICY_LOADING_ERROR };
     }
 
     if (!imageObject) {
@@ -202,8 +240,28 @@ const useAISegmentation = () => {
       // promptedModelId is already the string identifier we need
       const modelIdentifier = promptedModelId;
 
+      let resolvedInputs = requestedInputs;
+      if (!hasExplicitInputs && policy) {
+        const routing = resolveRoutingBinding(
+          policy,
+          PROMPTED_SEGMENTATION_TASK,
+          activeLabelId,
+          availablePromptedModels
+        );
+
+        const selectedModelMatchesBinding =
+          routing?.model &&
+          routing?.isCompatible &&
+          !routing?.isStale &&
+          matchesModelKey(routing.model, PROMPTED_SEGMENTATION_TASK, modelIdentifier);
+
+        if (selectedModelMatchesBinding && routing.binding?.inputs != null) {
+          resolvedInputs = routing.binding.inputs;
+        }
+      }
+
       // Send segmentation request via WebSocket
-      const response = await annotationSession.runSegmentation(modelIdentifier, wsPrompts);
+      const response = await annotationSession.runSegmentation(modelIdentifier, wsPrompts, resolvedInputs);
 
       // Transform response to mask format
       const mask = transformResponseToMask(response);
@@ -292,17 +350,21 @@ const useAISegmentation = () => {
     promptedModelId,
     prompts,
     imageObject,
-    objectsList,
-    setIsSubmitting,
-    transformResponseToMask,
-    consumePrompts,
-    addObject,
-    updateObject,
     refinementModeActive,
     refinementModeObjectId,
+    objectsList,
+    transformResponseToMask,
+    addObject,
+    updateObject,
+    consumePrompts,
     exitRefinementMode,
     setCurrentTool,
     syncEditModeDraftFromRefinement,
+    policy,
+    policyLoading,
+    activeLabelId,
+    availablePromptedModels,
+    datasetId,
   ]);
 
   return {

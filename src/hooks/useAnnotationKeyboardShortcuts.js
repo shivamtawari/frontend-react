@@ -15,9 +15,8 @@ import {
   useWorkspaceMode,
 } from '../stores/selectors/annotationSelectors';
 import useAISegmentation from './useAISegmentation';
-import { useSuggestionSegmentation } from './useSuggestionSegmentation';
+import useSuggestSimilar from '../components/annotationPage/workspace/useSuggestSimilar';
 import { deleteObject } from '../utils/objectOperations';
-import { getContourId } from '../utils/objectUtils';
 
 /**
  * Action keyboard shortcuts for the annotation page.
@@ -53,7 +52,7 @@ export default function useAnnotationKeyboardShortcuts() {
   const mode = useWorkspaceMode();
 
   const { runSegmentation } = useAISegmentation();
-  const { runSuggestion, isRunning: isRunningSuggestion } = useSuggestionSegmentation();
+  const suggestSimilar = useSuggestSimilar();
   const runInstanceRequest = setInstanceRunRequested;
 
   const canRunPrompted =
@@ -108,17 +107,9 @@ export default function useAnnotationKeyboardShortcuts() {
         }
         case '2': {
           if (isModifier) break;
-          if (selectedObjects.length === 0) break;
-          if (isRunningSuggestion) break;
+          if (!suggestSimilar.eligible) break;
           e.preventDefault();
-          const contourIds = selectedObjects.map((o) => getContourId(o)).filter(Boolean);
-          const labelId = selectedObjects[0]?.labelId ?? null;
-          if (contourIds.length > 0) {
-            runSuggestion(
-              contourIds.length === 1 ? contourIds[0] : contourIds,
-              labelId
-            );
-          }
+          suggestSimilar.run();
           break;
         }
         case '3': {
@@ -159,8 +150,7 @@ export default function useAnnotationKeyboardShortcuts() {
     mode,
     runSegmentation,
     selectedObjects,
-    runSuggestion,
-    isRunningSuggestion,
+    suggestSimilar,
     runInstanceRequest,
     handleRejectSelected,
     currentTool,

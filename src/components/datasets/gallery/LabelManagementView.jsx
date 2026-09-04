@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { ArrowLeft, Sparkles, ListTree, Plus, Edit2, Trash2 } from "lucide-react";
+import { Sparkles, ListTree } from "lucide-react";
 import * as api from "../../../api";
 import EditableLabels from "./EditableLabels";
 import DescribeLabelSpaceModal from "./DescribeLabelSpaceModal";
 import { extractLabelsFromResponse } from "../../../utils/labelHierarchy";
 
-const LabelManagementView = ({ dataset, labels, onBack, onLabelsUpdated }) => {
+const LabelManagementView = ({ dataset, labels, onLabelsUpdated }) => {
   const [showDescribeModal, setShowDescribeModal] = useState(false);
 
   // Re-fetch labels after the assistant applies a generated hierarchy so the
@@ -21,20 +21,9 @@ const LabelManagementView = ({ dataset, labels, onBack, onLabelsUpdated }) => {
       {/* Header */}
       <div className="p-3 sm:p-4 border-b border-ln bg-p1 sticky top-0 z-10">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center space-x-2 sm:space-x-3 lg:space-x-4">
-            <button
-              onClick={onBack}
-              className="flex items-center space-x-1.5 sm:space-x-2 text-t2 hover:text-t1 transition-colors text-sm sm:text-base"
-            >
-              <ArrowLeft size={18} className="sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Back to Overview</span>
-              <span className="sm:hidden">Back</span>
-            </button>
-            <div className="h-5 sm:h-6 w-px bg-ln2"></div>
-            <h2 className="text-lg sm:text-xl font-bold text-t1">
-              Label Management
-            </h2>
-          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-t1">
+            Label Management
+          </h2>
 
           <button
             onClick={() => setShowDescribeModal(true)}
@@ -59,37 +48,29 @@ const LabelManagementView = ({ dataset, labels, onBack, onLabelsUpdated }) => {
               </div>
               <div className="flex-1">
                 <h3 className="text-base font-semibold text-t1">
-                  Build a hierarchical label space
+                  Nesting a label means "part of"
                 </h3>
                 <p className="text-sm text-t2 mt-1 leading-relaxed">
-                  Labels are organized as a tree: broad categories at the top, with more
-                  specific sublabels nested underneath (e.g. <span className="font-medium text-t2">Cell</span> ›
-                  <span className="font-medium text-t2"> White blood cell</span> ›
-                  <span className="font-medium text-t2"> Neutrophil</span>). This structure carries
-                  through to annotation, model training, and quantification.
+                  A label nested under another one is <span className="font-medium text-t1">a part
+                  of</span> it — <span className="font-medium text-t1">Nucleus</span> under{' '}
+                  <span className="font-medium text-t1">Cell</span> reads <em>a nucleus is part of a
+                  cell</em>. Say the sentence out loud before you nest; if it does not work, the
+                  label belongs at the top level.
+                </p>
+                <p className="text-sm text-t2 mt-2 leading-relaxed">
+                  This is what lets you annotate one object inside another:{' '}
+                  <span className="font-medium text-t1">an object can only carry a label that is a
+                  direct part of the label on the object containing it</span>. Sibling labels should
+                  be mutually exclusive — an object is one of them, never two.
                 </p>
 
-                {/* Action legend */}
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-t2">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-ac bg-acS">
-                      <Plus size={12} />
-                    </span>
-                    Add a sublabel beneath a label
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-ac bg-acS">
-                      <Edit2 size={12} />
-                    </span>
-                    Rename a label
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-err bg-errBg">
-                      <Trash2 size={12} />
-                    </span>
-                    Delete a label
-                  </span>
-                </div>
+                {/* The confusion the tree cannot express, said plainly */}
+                <p className="mt-3 text-xs text-t3 leading-relaxed">
+                  Nesting is not for subtypes. <span className="font-medium text-t2">Acropora</span>{' '}
+                  is a <em>kind of</em> coral, not a part of one, so it stays at the top level next
+                  to <span className="font-medium text-t2">Coral</span> — "is a kind of" is not
+                  something the label space can record yet.
+                </p>
 
                 {/* Inline hint toward the assistant */}
                 <button

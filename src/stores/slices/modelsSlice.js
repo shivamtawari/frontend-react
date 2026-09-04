@@ -22,6 +22,38 @@ const pickDefaultId = (models, favorite) => {
   return ids[0] ?? null;
 };
 
+const normalizeFavorites = (result) =>
+  result?.success && result?.favorites && typeof result.favorites === 'object'
+    ? result.favorites
+    : {};
+
+const extractLabelIds = (model) => {
+  if (Array.isArray(model?.label_ids)) return model.label_ids;
+  if (model?.label_id != null) return [model.label_id];
+  return [];
+};
+
+let favoritesInFlightPromise = null;
+
+const reconcileFavorites = async (set, fallback) => {
+  try {
+    const result = await getModelFavorites();
+    if (!result?.success) throw new Error('Favorites refresh failed');
+    const favorites = normalizeFavorites(result);
+    set((state) => {
+      state.models.favorites = favorites;
+      state.models.favoritesLoaded = true;
+    });
+    return favorites;
+  } catch (_) {
+    set((state) => {
+      state.models.favorites = fallback;
+      state.models.favoritesLoaded = true;
+    });
+    return fallback;
+  }
+};
+
 export const createModelsSlice = (set, get) => ({
   setPromptedModel: (model) => set((state) => {
     state.models.promptedModel = model;
@@ -47,39 +79,90 @@ export const createModelsSlice = (set, get) => ({
 
   // Load the user's favorite model per task ({ task: registry_key }).
   fetchModelFavorites: async () => {
-    const result = await getModelFavorites();
-    set((state) => {
-      state.models.favorites = result.favorites || {};
-      state.models.favoritesLoaded = true;
-    });
-    return get().models.favorites;
+    if (favoritesInFlightPromise) return favoritesInFlightPromise;
+    favoritesInFlightPromise = (async () => {
+      try {
+        const result = await getModelFavorites();
+        const favorites = result?.success
+          ? normalizeFavorites(result)
+          : get().models.favorites || {};
+        set((state) => {
+          state.models.favorites = favorites;
+          state.models.favoritesLoaded = true;
+        });
+        return favorites;
+      } catch (_) {
+        const favorites = get().models.favorites || {};
+        set((state) => {
+          state.models.favoritesLoaded = true;
+        });
+        return favorites;
+      } finally {
+        favoritesInFlightPromise = null;
+      }
+    })();
+    return favoritesInFlightPromise;
   },
 
   // Fetch favorites once, before defaults are computed.
   ensureFavoritesLoaded: async () => {
     if (get().models.favoritesLoaded) return;
-    await get().fetchModelFavorites();
+    try {
+      await get().fetchModelFavorites();
+    } catch (_) {
+      set((state) => {
+        state.models.favorites = {};
+        state.models.favoritesLoaded = true;
+      });
+    }
   },
 
   // Make `registryKey` the favorite (default) model for `task`. Optimistic;
   // reverts by refetching on failure.
   setFavoriteModel: async (task, registryKey) => {
+    const previousFavorites = { ...(get().models.favorites || {}) };
     set((state) => {
-      state.models.favorites = { ...state.models.favorites, [task]: registryKey };
+      if (!state.models.favorites) state.models.favorites = {};
+      state.models.favorites[task] = registryKey;
+      state.models.favoritesLoaded = true;
     });
-    const res = await setModelFavorite(task, registryKey);
-    if (!res.success) await get().fetchModelFavorites();
+    try {
+      const res = await setModelFavorite(task, registryKey);
+      if (!res?.success) {
+        await reconcileFavorites(set, previousFavorites);
+      }
+    } catch (_) {
+      await reconcileFavorites(set, previousFavorites);
+    }
   },
 
   // Clear the favorite model for `task`.
   clearFavoriteModel: async (task) => {
+    const previousFavorites = { ...(get().models.favorites || {}) };
     set((state) => {
-      const next = { ...state.models.favorites };
-      delete next[task];
-      state.models.favorites = next;
+      if (state.models.favorites) {
+        delete state.models.favorites[task];
+      }
+      state.models.favoritesLoaded = true;
     });
-    const res = await clearModelFavorite(task);
-    if (!res.success) await get().fetchModelFavorites();
+    try {
+      const res = await clearModelFavorite(task);
+      if (!res?.success) {
+        await reconcileFavorites(set, previousFavorites);
+      }
+    } catch (_) {
+      await reconcileFavorites(set, previousFavorites);
+    }
+  },
+
+  // Star / unstar a model for a specific task.
+  toggleFavorite: async (task, modelId) => {
+    const current = get().models.favorites?.[task];
+    if (current === modelId) {
+      await get().clearFavoriteModel(task);
+    } else {
+      await get().setFavoriteModel(task, modelId);
+    }
   },
 
   // --- Available models --------------------------------------------------
@@ -95,9 +178,12 @@ export const createModelsSlice = (set, get) => ({
       if (result.success && result.models && result.models.length > 0) {
         const transformedModels = result.models.map(model => ({
           id: getModelId(model),
+          registry_key: getModelId(model),
+          task: 'instance-suggestion',
           name: model.name,
           description: model.description,
           tags: model.tags,
+          label_ids: extractLabelIds(model),
           supports_refinement: model.refinement_supported,
           model_status: model.model_status || 'ready',
         }));
@@ -137,9 +223,12 @@ export const createModelsSlice = (set, get) => ({
       if (result.success && result.models && result.models.length > 0) {
         const transformedModels = result.models.map(model => ({
           id: getModelId(model),
+          registry_key: getModelId(model),
+          task: 'prompted-segmentation',
           name: model.name,
           description: model.description,
           tags: model.tags,
+          label_ids: extractLabelIds(model),
           supported_prompt_types: model.prompt_types_supported,
           supports_refinement: model.refinement_supported,
           model_status: model.model_status || 'ready',
@@ -181,9 +270,12 @@ export const createModelsSlice = (set, get) => ({
       if (result?.success && modelsList.length > 0) {
         const transformedModels = modelsList.map(model => ({
           id: getModelId(model),
+          registry_key: getModelId(model),
+          task: 'instance-segmentation',
           name: model.name,
           description: model.description,
           tags: model.tags,
+          label_ids: extractLabelIds(model),
           model_status: model.model_status || 'ready',
         }));
 

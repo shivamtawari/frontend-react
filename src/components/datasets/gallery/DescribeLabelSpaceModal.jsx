@@ -27,9 +27,9 @@ import * as api from "../../../api";
  * still build labels manually behind this dialog.
  */
 const EXAMPLE_PROMPTS = [
-  "Cell types in a blood smear: red blood cells, white blood cells (with subtypes), and platelets.",
-  "Road scene objects: vehicles (car, truck, bus), pedestrians, and traffic signs.",
-  "Plant anatomy: leaves, stems, and flowers with petals and stamen.",
+  "Cells in a blood smear: whole cells, with their nuclei and granules inside them.",
+  "Road scene objects: vehicles with their wheels and windows, pedestrians, and traffic signs.",
+  "Plant anatomy: leaves with their veins, stems, and flowers with petals and stamen.",
 ];
 
 // Deterministic color for a draft node (no DB id available yet).
@@ -280,7 +280,7 @@ const DescribeLabelSpaceModal = ({ isOpen, onClose, dataset, onLabelsUpdated }) 
                       <ListTree className="w-3.5 h-3.5" />
                       nested label hierarchy
                     </span>{" "}
-                    — grouping related labels and nesting subtypes automatically — that you can review
+                    — nesting each part under the thing it is part of — that you can review
                     and tweak before applying.
                   </div>
                 </div>
@@ -394,7 +394,7 @@ const DescribeLabelSpaceModal = ({ isOpen, onClose, dataset, onLabelsUpdated }) 
                     onChange={(e) => setRefineText(e.target.value)}
                     disabled={generating}
                     onKeyDown={(e) => e.key === "Enter" && handleRefine()}
-                    placeholder="Refine, e.g. 'add subtypes for white blood cells' or 'merge the vehicle groups'"
+                    placeholder="Refine, e.g. 'add the parts of a white blood cell' or 'merge the vehicle groups'"
                     className="w-full px-4 py-2.5 pr-12 border border-ln2 rounded-xl text-sm focus:ring-2 focus:ring-ac focus:border-transparent placeholder:text-t3 disabled:bg-well"
                   />
                   <button

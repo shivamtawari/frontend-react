@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Clock, Loader2, Plus, Wand2 } from "lucide-react";
 import DatasetManagementLayout from "../components/datasets/gallery/DatasetManagementLayout";
 import { useDataset } from "../contexts/DatasetContext";
@@ -16,18 +16,21 @@ import {
     fetchLabels,
     getInferenceJobs,
     getInferenceModelCatalog,
+    getInferenceRoutingPolicy,
     getInferenceScopeCounts,
     previewInferenceReplace,
     startInferenceJob,
     streamInferenceJob,
 } from "../api";
+import { BATCH_INFERENCE_TASKS } from "../constants/tasks";
+import { getBatchStepsFromPolicy } from "../utils/inferenceRouting";
 
 /**
  * Batch inference: annotate a whole dataset without opening the canvas.
  *
  * The page is the plan editor plus the progress view for one run at a time, laid out like the
  * training page (history rail, config or progress on the right) so the two AI pages behave
- * the same way.
+ * the same way. Dataset routing is a read-only source for preselecting the plan.
  */
 
 const DEFAULT_OPTIONS = {
@@ -107,6 +110,8 @@ export default function BatchInferencePage() {
     const [labelsById, setLabelsById] = useState({});
     const [catalog, setCatalog] = useState({ models: [], retrieval_strategies: [] });
     const [scope, setScope] = useState({ total: 0, not_started: 0, unreviewed: 0 });
+    const [policy, setPolicy] = useState(null);
+    const [appliedFilter, setAppliedFilter] = useState(null);
 
     const [stepsByLabel, setStepsByLabel] = useState({});
     const [options, setOptions] = useState(DEFAULT_OPTIONS);
@@ -144,38 +149,115 @@ export default function BatchInferencePage() {
         [datasetId, runName, steps, imageSelection, options]
     );
 
-    const loadJobs = useCallback(async () => {
+    const loadJobs = useCallback(async (isCancelled = () => false) => {
         try {
             const list = await getInferenceJobs(datasetId);
-            setJobs(Array.isArray(list) ? list : []);
+            if (!isCancelled()) {
+                setJobs(Array.isArray(list) ? list : []);
+            }
             return list;
         } catch (e) {
             // Non-fatal: the history rail simply stays empty.
+            if (!isCancelled()) setJobs([]);
             return [];
         }
     }, [datasetId]);
 
+    const applyPolicyToBatchSteps = useCallback(
+        (bindings, availableLabels, availableCatalog, preferredTask = null) => {
+            if (!Array.isArray(bindings)) return;
+            setStepsByLabel(
+                getBatchStepsFromPolicy(
+                    { bindings },
+                    availableLabels,
+                    availableCatalog?.models || [],
+                    preferredTask
+                )
+            );
+        },
+        []
+    );
+
+    const handleApplyFilter = useCallback(
+        (filterKey) => {
+            if (!policy?.bindings) return;
+            applyPolicyToBatchSteps(
+                policy.bindings,
+                labelsById,
+                catalog,
+                filterKey === "all" ? null : filterKey
+            );
+            setAppliedFilter(filterKey);
+        },
+        [policy, labelsById, catalog, applyPolicyToBatchSteps]
+    );
+
     useEffect(() => {
-        if (!datasetId) return;
+        if (!datasetId) return undefined;
+        let cancelled = false;
+
         setIsLoading(true);
+        setError(null);
+        setPolicy(null);
+        setAppliedFilter(null);
+        setStepsByLabel({});
+        setOptions(DEFAULT_OPTIONS);
+        setJobs([]);
+        setSelectedJob(null);
+        setActiveJobId(null);
+        setMode("config");
+
         (async () => {
             try {
-                const [labelResponse, catalogResponse, scopeResponse] = await Promise.all([
-                    fetchLabels(datasetId),
-                    getInferenceModelCatalog(datasetId),
-                    getInferenceScopeCounts(datasetId),
-                ]);
-                setLabelsById(labelResponse?.labels?.id_to_label_object || {});
-                setCatalog(catalogResponse || { models: [], retrieval_strategies: [] });
+                const [labelResponse, catalogResponse, scopeResponse, policyResponse] =
+                    await Promise.all([
+                        fetchLabels(datasetId),
+                        getInferenceModelCatalog(datasetId),
+                        getInferenceScopeCounts(datasetId),
+                        getInferenceRoutingPolicy(datasetId).catch(() => null),
+                    ]);
+                if (cancelled) return;
+
+                const loadedLabels = labelResponse?.labels?.id_to_label_object || {};
+                const loadedCatalog = catalogResponse || {
+                    models: [],
+                    retrieval_strategies: [],
+                };
+
+                setLabelsById(loadedLabels);
+                setCatalog(loadedCatalog);
                 setScope(scopeResponse || { total: 0, not_started: 0, unreviewed: 0 });
+                setPolicy(policyResponse || null);
+                setAppliedFilter(null);
+
+                const bindings = Array.isArray(policyResponse?.bindings)
+                    ? policyResponse.bindings
+                    : [];
+                const hasInstance = bindings.some(
+                    (binding) => binding.task === "instance-segmentation"
+                );
+                const hasCrossImage = bindings.some(
+                    (binding) => binding.task === "cross-image-suggestion"
+                );
+                if (hasInstance !== hasCrossImage) {
+                    const task = hasInstance
+                        ? "instance-segmentation"
+                        : "cross-image-suggestion";
+                    applyPolicyToBatchSteps(bindings, loadedLabels, loadedCatalog, task);
+                    setAppliedFilter(task);
+                }
             } catch (e) {
-                setError(e.message || "Could not load the models for this dataset.");
+                if (!cancelled) {
+                    setError(e.message || "Could not load the models for this dataset.");
+                }
             } finally {
-                setIsLoading(false);
+                if (!cancelled) setIsLoading(false);
             }
             // Landing while a run is going should show that run, not an empty config form —
             // this is the tab somebody comes back to in order to check on it.
-            const list = await loadJobs();
+            if (cancelled) return;
+            const list = await loadJobs(() => cancelled);
+            if (cancelled) return;
             const running = (list || []).find((job) => !TERMINAL_JOB_STATUSES.has(job.status));
             if (running) {
                 setSelectedJob(running);
@@ -183,7 +265,11 @@ export default function BatchInferencePage() {
                 setMode("run");
             }
         })();
-    }, [datasetId, loadJobs]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [datasetId, loadJobs, applyPolicyToBatchSteps]);
 
     // Stream the active run; tear the stream down on change/unmount.
     useEffect(() => {
@@ -228,8 +314,10 @@ export default function BatchInferencePage() {
         };
     }, [options.write_mode, options.preserve_reviewed, imageSelection, steps.length, requestBody]);
 
-    const setStep = (labelId, step) =>
+    const setStep = (labelId, step) => {
+        setAppliedFilter(null);
         setStepsByLabel((current) => ({ ...current, [labelId]: step }));
+    };
 
     const start = async (confirmReplace) => {
         setError(null);
@@ -286,6 +374,22 @@ export default function BatchInferencePage() {
         setSelectedJob(job);
         setActiveJobId(TERMINAL_JOB_STATUSES.has(job.status) ? null : job.id);
     };
+
+    const batchEligibleBindings = useMemo(
+        () =>
+            Array.isArray(policy?.bindings)
+                ? policy.bindings.filter((binding) =>
+                      BATCH_INFERENCE_TASKS.includes(binding.task)
+                  )
+                : [],
+        [policy]
+    );
+    const hasInstanceRoutes = batchEligibleBindings.some(
+        (binding) => binding.task === "instance-segmentation"
+    );
+    const hasCrossImageRoutes = batchEligibleBindings.some(
+        (binding) => binding.task === "cross-image-suggestion"
+    );
 
     const runNameError =
         runName.length > 0 && !RUN_NAME_PATTERN.test(runName)
@@ -402,19 +506,92 @@ export default function BatchInferencePage() {
                                 </section>
 
                                 <section>
-                                    <h2 className="text-base font-semibold text-t1 mb-1">
-                                        2. Which model annotates which label
-                                    </h2>
-                                    <p className="text-xs text-t3 mb-3">
-                                        Bind a model to each label you want annotated. Labels left on
-                                        “Skip” are untouched.
-                                    </p>
+                                    <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
+                                        <div>
+                                            <h2 className="text-base font-semibold text-t1">
+                                                2. Which model annotates which label
+                                            </h2>
+                                            <p className="text-xs text-t3">
+                                                Bind a model to each label you want annotated. Labels
+                                                left on “Skip” are untouched.
+                                            </p>
+                                        </div>
+                                        <Link
+                                            to={`/dataset/${datasetId}/model-orchestration`}
+                                            className="text-xs font-medium text-ac hover:underline"
+                                        >
+                                            Edit model routing
+                                        </Link>
+                                    </div>
+
+                                    {batchEligibleBindings.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleApplyFilter("all")}
+                                                aria-pressed={appliedFilter === "all"}
+                                                className={`px-2.5 py-1 text-xs rounded-lg border ${
+                                                    appliedFilter === "all"
+                                                        ? "border-acLn bg-acS text-ac"
+                                                        : "border-ln bg-p1 text-t2 hover:bg-hv"
+                                                }`}
+                                            >
+                                                Apply All Routes
+                                            </button>
+                                            {hasInstanceRoutes && hasCrossImageRoutes && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleApplyFilter(
+                                                                "instance-segmentation"
+                                                            )
+                                                        }
+                                                        aria-pressed={
+                                                            appliedFilter ===
+                                                            "instance-segmentation"
+                                                        }
+                                                        className={`px-2.5 py-1 text-xs rounded-lg border ${
+                                                            appliedFilter ===
+                                                            "instance-segmentation"
+                                                                ? "border-acLn bg-acS text-ac"
+                                                                : "border-ln bg-p1 text-t2 hover:bg-hv"
+                                                        }`}
+                                                    >
+                                                        Instance Seg Only
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleApplyFilter(
+                                                                "cross-image-suggestion"
+                                                            )
+                                                        }
+                                                        aria-pressed={
+                                                            appliedFilter ===
+                                                            "cross-image-suggestion"
+                                                        }
+                                                        className={`px-2.5 py-1 text-xs rounded-lg border ${
+                                                            appliedFilter ===
+                                                            "cross-image-suggestion"
+                                                                ? "border-acLn bg-acS text-ac"
+                                                                : "border-ln bg-p1 text-t2 hover:bg-hv"
+                                                        }`}
+                                                    >
+                                                        Cross-Image Only
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <LabelModelPlanner
                                         labelsById={labelsById}
                                         models={catalog.models}
                                         strategies={catalog.retrieval_strategies}
                                         steps={steps}
                                         onChange={setStep}
+                                        allowedTasks={BATCH_INFERENCE_TASKS}
                                     />
                                 </section>
 

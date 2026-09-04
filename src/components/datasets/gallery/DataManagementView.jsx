@@ -1,10 +1,9 @@
 import React, { useCallback, useState } from "react";
-import { ArrowLeft } from "lucide-react";
 import ImageGallery from "./ImageGallery";
 import { usePermissions, Permission } from "../../../hooks/usePermissions";
 import * as api from "../../../api";
 
-const DataManagementView = ({ images, dataset, onBack, onImageClick, onImagesUpdated, onShowQuantifications }) => {
+const DataManagementView = ({ images, dataset, onImageClick, onImagesUpdated, onShowQuantifications }) => {
   // The selection itself lives in the gallery, next to the checkboxes and the
   // bulk bar; this view only owns the confirmation step and the delete calls.
   const [pendingDelete, setPendingDelete] = useState([]);
@@ -81,20 +80,9 @@ const DataManagementView = ({ images, dataset, onBack, onImageClick, onImagesUpd
       {/* Header */}
       <div className="p-3 sm:p-4 border-b border-ln bg-p1 sticky top-0 z-10">
         <div className="flex items-center justify-between mb-3 sm:mb-4">
-          <div className="flex items-center space-x-2 sm:space-x-3 lg:space-x-4">
-            <button
-              onClick={onBack}
-              className="flex items-center space-x-1.5 sm:space-x-2 text-t2 hover:text-t1 transition-colors text-sm sm:text-base"
-            >
-              <ArrowLeft size={18} className="sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Back to Overview</span>
-              <span className="sm:hidden">Back</span>
-            </button>
-            <div className="h-5 sm:h-6 w-px bg-ln2"></div>
-            <h2 className="text-lg sm:text-xl font-bold text-t1">
-              Data Management
-            </h2>
-          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-t1">
+            Data Management
+          </h2>
         </div>
       </div>
 
@@ -158,4 +146,3 @@ const DataManagementView = ({ images, dataset, onBack, onImageClick, onImagesUpd
 };
 
 export default DataManagementView;
-

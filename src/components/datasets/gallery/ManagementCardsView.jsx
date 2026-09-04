@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Database, Brain, BarChart3, Tag, SquarePen, Download, Eye, GraduationCap, Users2, ClipboardCheck, Ruler, Wrench, Settings, HelpCircle, Wand2 } from 'lucide-react';
+import { Database, Brain, BarChart3, Tag, SquarePen, Download, Eye, GraduationCap, Users2, ClipboardCheck, Ruler, Wrench, Settings, HelpCircle, Wand2, Cpu } from 'lucide-react';
 import ManagementCard from './ManagementCard';
 import PhaseProgressBar from '../PhaseProgressBar';
 import RoleBadge from '../RoleBadge';
@@ -8,6 +8,7 @@ import { Permission } from '../../../utils/permissions';
 import { OVERALL_STATES, getPhase } from '../../../utils/imageStatus';
 import { useGalleryStats } from '../../../stores/selectors';
 import { fetchReviewSummary, fetchCorrectionSummary } from '../../../api/reviews';
+import { DOCS, openDocs } from '../../../constants/docs';
 
 /**
  * The sections the cards are grouped under, in display order. Each card names its
@@ -37,6 +38,7 @@ const ManagementCardsView = ({
   onLabelManagementClick,
   onExportCocoClick,
   onModelTrainingClick,
+  onModelOrchestrationClick,
   onBatchInferenceClick,
   onBrowseAnnotations,
   onManageAccessClick,
@@ -247,6 +249,16 @@ const ManagementCardsView = ({
       color: 'purple',
     },
     {
+      id: 'model-orchestration',
+      group: 'models',
+      icon: Cpu,
+      title: 'Model Orchestration',
+      description: 'Configure default models and per-label routing policies for interactive tools, cross-image suggestions, and batch runs',
+      onClick: onModelOrchestrationClick,
+      permitted: canAny([Permission.AI_INTERACTIVE, Permission.AI_BATCH_INFER]),
+      color: 'indigo',
+    },
+    {
       id: 'model-training',
       group: 'models',
       icon: GraduationCap,
@@ -300,15 +312,18 @@ const ManagementCardsView = ({
       disabled: true,
     },
     {
-      // Placeholder: will open the documentation. Dysfunctional for now.
+      // The documentation is a separate site, so this card leaves the app rather
+      // than routing anywhere. It is permitted for everyone: whatever a role can
+      // or cannot do here, reading about it should never be gated.
       id: 'help',
       group: 'configurations',
       icon: HelpCircle,
       title: 'Help',
       description: 'Read the documentation and learn how everything works',
+      stat: 'Opens the documentation site in a new tab',
+      onClick: () => openDocs(DOCS.home),
       permitted: true,
       color: 'blue',
-      disabled: true,
     },
   ].filter((card) => card.permitted);
 
@@ -323,12 +338,19 @@ const ManagementCardsView = ({
   return (
     <div className="overflow-y-auto bg-app p-4 sm:p-5 lg:p-6 h-full">
       <div className="w-full mx-auto">
+        {/* The dataset's name and description used to live in the sidebar. This
+            is the one page with room for them, and the one where knowing which
+            dataset you are looking at actually decides what you click next. */}
         <div className="mb-6 sm:mb-8">
           <div className="flex items-center gap-3 mb-1 sm:mb-2">
-            <h2 className="text-2xl sm:text-3xl font-bold text-t1">Dataset Management</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-t1">
+              {dataset?.name || 'Dataset Management'}
+            </h2>
             {role && <RoleBadge role={role} showDescription />}
           </div>
-          <p className="text-sm sm:text-base text-t2">Manage your dataset, models, and annotations</p>
+          <p className="text-sm sm:text-base text-t2 max-w-3xl">
+            {dataset?.description || 'Manage your dataset, models, and annotations'}
+          </p>
         </div>
 
         <div className="space-y-8 sm:space-y-10">

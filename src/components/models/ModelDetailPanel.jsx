@@ -35,6 +35,8 @@ import {
 } from "./modelStats";
 import { filterDisplayableModelTags } from "./modelTags";
 
+import TaskFavoriteChooser from "./TaskFavoriteChooser";
+
 const TASK_VISUAL = {
   "prompted-segmentation": { Icon: MousePointerClick, tile: "bg-acS text-ac" },
   "instance-suggestion": { Icon: Wand2, tile: "bg-acS text-ac" },
@@ -81,7 +83,16 @@ const SectionTitle = ({ children }) => (
  * the compact chip omits lives here: full description, performance figures,
  * capabilities, a spec table, and the fine-tune action.
  */
-const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onAction }) => {
+const ModelDetailPanel = ({
+  model,
+  isFavorite = false,
+  selectedTask = "all",
+  favorites = {},
+  onToggleFavorite,
+  onAction,
+}) => {
+  const [showChooser, setShowChooser] = React.useState(false);
+
   if (!model) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center p-10">
@@ -153,6 +164,15 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
     trainedOnDataset ||
     tags.length > 0;
 
+  const handleStarClick = (e) => {
+    e.stopPropagation();
+    if (selectedTask !== "all" || tasks.length <= 1) {
+      onToggleFavorite?.(model, selectedTask !== "all" ? selectedTask : tasks[0]);
+    } else {
+      setShowChooser((prev) => !prev);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-6 max-w-3xl">
@@ -173,7 +193,7 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 relative">
                 {model.status && (
                   <span
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -190,13 +210,13 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
                 )}
                 <button
                   type="button"
-                  onClick={() => onToggleFavorite?.(model)}
+                  onClick={handleStarClick}
                   aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
                   aria-pressed={isFavorite}
                   title={
                     isFavorite
                       ? "Favorite — preselected in the annotation page"
-                      : "Set as your default model for its tasks"
+                      : "Set as your personal default model"
                   }
                   className="p-1.5 rounded-lg hover:bg-hv transition-colors"
                 >
@@ -207,20 +227,49 @@ const ModelDetailPanel = ({ model, isFavorite = false, onToggleFavorite, onActio
                     style={{ width: 20, height: 20 }}
                   />
                 </button>
+
+                {showChooser && (
+                  <TaskFavoriteChooser
+                    model={model}
+                    favorites={favorites}
+                    onToggleTaskFavorite={(m, t) => {
+                      onToggleFavorite?.(m, t);
+                    }}
+                    onClose={() => setShowChooser(false)}
+                    anchorAlign="right"
+                  />
+                )}
               </div>
             </div>
 
-            {/* Capability + badge chips */}
+            {/* Capability + badge chips with per-task star controls */}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {tasks.map((taskKey) => {
                 const meta = getTaskMeta(taskKey);
+                const isTaskFav = favorites[taskKey] === model.identifier;
                 return (
                   <span
                     key={taskKey}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${meta.chip}`}
+                    className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full text-[11px] font-medium ${meta.chip}`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-                    {meta.label}
+                    <span>{meta.label}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleFavorite?.(model, taskKey);
+                      }}
+                      aria-label={`Toggle favorite for ${meta.label}`}
+                      className="p-0.5 rounded hover:bg-black/10 transition-colors"
+                      title={isTaskFav ? `Favorite for ${meta.label}` : `Set as default for ${meta.label}`}
+                    >
+                      <Star
+                        className={`w-3 h-3 ${
+                          isTaskFav ? "fill-amber-400 text-warn" : "text-t3 hover:text-warn"
+                        }`}
+                      />
+                    </button>
                   </span>
                 );
               })}

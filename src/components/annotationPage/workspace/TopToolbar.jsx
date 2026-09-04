@@ -59,6 +59,7 @@ import {
   useSetRightTab,
 } from '../../../stores/selectors/annotationSelectors';
 import useAnnotationHistory from '../../../hooks/useAnnotationHistory';
+import { DOCS, openDocs } from '../../../constants/docs';
 
 /** Status-pill tokens for the three workflow states. */
 const STATUS_TONE = {
@@ -192,7 +193,7 @@ const TopToolbar = () => {
             label="Documentation"
             onClick={() => {
               setAppMenuOpen(false);
-              navigate('/docs');
+              openDocs(DOCS.drawAndRefine);
             }}
           />
           <MenuItem

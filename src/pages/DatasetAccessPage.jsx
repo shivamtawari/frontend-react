@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   ClipboardList,
   Link2,
   Loader2,
@@ -19,6 +18,7 @@ import ReviewPolicyPanel from '../components/datasets/access/ReviewPolicyPanel';
 import TaskAssignmentPanel from '../components/datasets/access/TaskAssignmentPanel';
 import PermissionMatrix from '../components/datasets/PermissionMatrix';
 import RoleBadge from '../components/datasets/RoleBadge';
+import DatasetGalleryHeader from '../components/datasets/gallery/DatasetGalleryHeader';
 
 const SECTIONS = {
   MEMBERS: 'members',
@@ -123,24 +123,16 @@ const DatasetAccessPage = () => {
 
   return (
     <div className="min-h-screen bg-well">
+      <DatasetGalleryHeader dataset={dataset} />
+
       {/* Header */}
       <div className="bg-p1 border-b border-ln">
         <div className="max-w-6xl mx-auto px-4 py-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <button
-                onClick={() => navigate(`/dataset/${datasetId}/datamanagement`)}
-                className="flex items-center gap-2 text-t2 hover:text-ac transition-colors duration-150 flex-shrink-0"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span className="hidden sm:inline">Back</span>
-              </button>
-              <div className="h-6 w-px bg-ln flex-shrink-0" />
               <Users2 className="w-6 h-6 flex-shrink-0 text-ac" />
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight text-t1 truncate">Manage access</h1>
-                <p className="text-t2 text-sm truncate">{dataset.name}</p>
-              </div>
+              {/* Going back is the top bar's job now, and it names the dataset. */}
+              <h1 className="text-xl font-semibold tracking-tight text-t1 truncate">Manage access</h1>
             </div>
             {role && <RoleBadge role={role} showDescription />}
           </div>

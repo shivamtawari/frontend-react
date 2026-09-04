@@ -68,6 +68,7 @@ export const Permission = {
     USER_MANAGE: 'user.manage',
     USER_SET_GLOBAL_ROLE: 'user.set_global_role',
     SYSTEM_MANAGE_MODELS: 'system.manage_models',
+    SYSTEM_MANAGE_SETTINGS: 'system.manage_settings',
 };
 
 /** Per-dataset roles, least to most privileged. */

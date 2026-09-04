@@ -18,8 +18,6 @@ import {
   useFocusModeActive,
   useFocusModeObjectId,
   useExitFocusMode,
-  useSuggestionModel,
-  useWebSocketIsReady,
   useEnterEditMode,
   useStartLineEdit,
   useSelectObject,
@@ -30,7 +28,7 @@ import { useZoomToObject } from '../../../hooks/useZoomToObject';
 import { useLabelSelection } from '../../../hooks/useLabelSelection';
 import { useLabelsHierarchy } from '../../../hooks/useLabelsHierarchy';
 import { getChildLabels, resolveParentLabelId } from '../../../utils/labelHierarchy';
-import { useSuggestionSegmentation } from '../../../hooks/useSuggestionSegmentation';
+import useSuggestSimilar from '../workspace/useSuggestSimilar';
 import { useDataset } from '../../../contexts/DatasetContext';
 import { calculateRenderedImageDimensions } from '../../../utils/canvasUtils';
 import { deleteObject } from '../../../utils/objectOperations';
@@ -61,7 +59,6 @@ const ObjectContextMenu = () => {
   const focusModeActive = useFocusModeActive();
   const focusModeObjectId = useFocusModeObjectId();
   const exitFocusMode = useExitFocusMode();
-  const suggestionModel = useSuggestionModel();
   
   // Use the same zoom hook as refinement mode
   const { zoomToObject } = useZoomToObject({
@@ -69,7 +66,6 @@ const ObjectContextMenu = () => {
     maxZoom: 4,
     minZoom: 1,
   });
-  const wsIsReady = useWebSocketIsReady();
   const enterEditMode = useEnterEditMode();
   const startLineEdit = useStartLineEdit();
   const selectObject = useSelectObject();
@@ -137,11 +133,7 @@ const ObjectContextMenu = () => {
     [flatLabels, parentLabelId]
   );
   
-  // Use suggestion segmentation hook
-  const { runSuggestion, isRunning: isRunningSuggestion } = useSuggestionSegmentation(
-    null, // onSuccess: objects are automatically added via WebSocket
-    (error) => alert(`Failed to suggest similar instances: ${error.message || 'Unknown error'}`)
-  );
+  const suggestSimilar = useSuggestSimilar();
 
   // Adjust position to keep menu within container bounds and place it intuitively next to the object
   useEffect(() => {
@@ -391,37 +383,8 @@ const ObjectContextMenu = () => {
   };
 
   const handleSuggestSimilar = async () => {
-    if (targetObjects.length === 0) {
-      hideContextMenu();
-      return;
-    }
-
-    // Get all contour IDs from selected objects
-    const contourIds = targetObjects
-      .map(obj => obj.contour_id)
-      .filter(id => id !== null && id !== undefined);
-    
-    if (contourIds.length === 0) {
-      alert('Could not find contour IDs for selected objects');
-      hideContextMenu();
-      return;
-    }
-
-    // Check if WebSocket is ready
-    if (!wsIsReady) {
-      alert('WebSocket connection is not ready. Please wait or refresh the page.');
-      hideContextMenu();
-      return;
-    }
-
     hideContextMenu();
-    
-    // Use the suggestion hook with all selected contour IDs as seeds
-    // For multiple seeds, we'll use the first object's labelId as the default
-    const labelId = targetObjects[0]?.labelId;
-    
-    // Pass contour IDs (hook handles both single and array)
-    await runSuggestion(contourIds.length === 1 ? contourIds[0] : contourIds, labelId);
+    await suggestSimilar.run();
   };
 
   const handleLineEditContour = (lineMode = 'reshape') => {
@@ -680,17 +643,14 @@ const ObjectContextMenu = () => {
       {/* Suggest Similar Instances Option */}
       <ContextMenuItem
         onClick={handleSuggestSimilar}
-        disabled={isRunningSuggestion || !suggestionModel || !wsIsReady}
+        disabled={!suggestSimilar.eligible}
         title={
-          !suggestionModel 
-            ? 'Select a suggestion model first' 
-            : !wsIsReady 
-              ? 'WebSocket not ready' 
-              : isMultiSelect
-                ? `Use ${targetObjects.length} objects as seeds for suggestion segmentation`
-                : 'Find similar instances using suggestion segmentation'
+          suggestSimilar.reason ||
+          (isMultiSelect
+            ? `Use ${targetObjects.length} objects as seeds for suggestion segmentation`
+            : 'Find similar instances using suggestion segmentation')
         }
-        label={isRunningSuggestion ? 'Finding similar...' : 'Suggest Similar Instances'}
+        label={suggestSimilar.isRunning ? 'Finding similar...' : 'Suggest Similar Instances'}
         icon={
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -724,4 +684,3 @@ const ObjectContextMenu = () => {
 };
 
 export default ObjectContextMenu;
-

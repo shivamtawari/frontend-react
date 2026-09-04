@@ -24,7 +24,7 @@ export function useSuggestionSegmentation(onSuccess, onError) {
   const availableModels = useAvailableSuggestionModels();
   const { addToast } = useToast();
 
-  const runSuggestion = useCallback(async (contourIdOrIds, labelId) => {
+  const runSuggestion = useCallback(async (contourIdOrIds, labelId, modelIdOverride = null, inputs = null) => {
     // Note: Model status is handled by the backend, no need to update here
     
     // Normalize to array
@@ -38,7 +38,9 @@ export function useSuggestionSegmentation(onSuccess, onError) {
       return;
     }
 
-    if (!suggestionModelId) {
+    const effectiveModelId = modelIdOverride || suggestionModelId;
+
+    if (!effectiveModelId) {
       const error = new Error('Please select a suggestion model first');
       if (onError) {
         onError(error);
@@ -63,11 +65,12 @@ export function useSuggestionSegmentation(onSuccess, onError) {
 
     try {
       // Call WebSocket method - objects will be added automatically via OBJECT_ADDED messages
-      // suggestionModelId is already the string identifier we need
+      // effectiveModelId is already the string identifier we need
       const response = await annotationSession.runSuggestion(
         contourIds,         // Array of seed contour IDs (can be single or multiple)
-        suggestionModelId,  // Model identifier (string)
-        labelId             // Label ID
+        effectiveModelId,   // Model identifier (string)
+        labelId,            // Label ID
+        inputs              // Saved inputs from route policy (conditioning and parameters)
       );
       
       // Note: Model status is handled by the backend, no need to update here
@@ -80,9 +83,9 @@ export function useSuggestionSegmentation(onSuccess, onError) {
       // ack reports how many were found.
       if (response?.data?.added_count === 0) {
         const model = availableModels.find(
-          (m) => (m?.id || m?.registry_key || m?.identifier) === suggestionModelId
+          (m) => (m?.id || m?.registry_key || m?.identifier) === effectiveModelId
         );
-        const modelName = model?.name || 'The model';
+        const modelName = model?.name || effectiveModelId;
         addToast({
           type: 'info',
           message: `${modelName} did not find any new instances. Try another model or add more exemplars!`,
@@ -105,4 +108,3 @@ export function useSuggestionSegmentation(onSuccess, onError) {
 
   return { runSuggestion, isRunning };
 }
-
