@@ -229,6 +229,8 @@ export const initialState = {
   objects: {
     list: [],
     selected: [],
+    labelDatasetId: null,   // Dataset ID that owns the currently cached datasetLabels and datasetLabelsMap
+    labelDatasetGeneration: 0, // Monotonically increasing generation counter for dataset transitions
     datasetLabels: [],       // Cached labels array for the current dataset (fetched once)
     datasetLabelsMap: null,   // Map<labelId, labelName> for quick lookup (or null if not loaded)
     visibility: {

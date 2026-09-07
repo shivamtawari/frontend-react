@@ -15,6 +15,7 @@ import {
   useSetActiveLabelId,
   useLabelColorOverrides,
   useSetLabelColorOverride,
+  useLabelDatasetGeneration,
 } from '../../../stores/selectors/annotationSelectors';
 
 /** Nests the flat label list, then flattens it again in display order. */
@@ -57,6 +58,7 @@ const LabelsTab = () => {
   const setActiveLabelId = useSetActiveLabelId();
   const colorOverrides = useLabelColorOverrides();
   const setLabelColorOverride = useSetLabelColorOverride();
+  const labelDatasetGeneration = useLabelDatasetGeneration();
 
   const { currentDataset } = useDataset();
   const { addToast } = useToast();
@@ -86,6 +88,7 @@ const LabelsTab = () => {
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name || !currentDataset) return;
+    const requestGen = labelDatasetGeneration;
     setBusy(true);
     try {
       await createLabel({ name, parent_id: null }, currentDataset.id);
@@ -98,7 +101,7 @@ const LabelsTab = () => {
           map.set(String(label.id), label.name);
         }
       });
-      setDatasetLabels(refreshed, map);
+      setDatasetLabels(refreshed, map, currentDataset.id, requestGen);
       setNewName('');
       setCreating(false);
       addToast({ type: 'success', message: `Label “${name}” created.` });
