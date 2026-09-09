@@ -8,8 +8,9 @@ import useWebSocketObjectHandler from '../hooks/useWebSocketObjectHandler';
 import useWebSocketStatusToasts from '../hooks/useWebSocketStatusToasts';
 import useWebSocketErrorToasts from '../hooks/useWebSocketErrorToasts';
 import useModelPreloader from '../hooks/useModelPreloader';
-import { useSetObjectsFromHierarchy, useClearObjects, useFailObjectsLoad, useSetAnnotationStatus, useSetDatasetLabels, useDatasetLabelsMap, useDatasetLabels, useFetchAvailablePromptedModels, useAvailablePromptedModels } from '../stores/selectors/annotationSelectors';
+import { useSetObjectsFromHierarchy, useClearObjects, useFailObjectsLoad, useSetAnnotationStatus, useSetDatasetLabels, useDatasetLabelsMap, useDatasetLabels, useFetchAvailablePromptedModels, useAvailablePromptedModels, useActivateLabelDataset, useLabelDatasetId } from '../stores/selectors/annotationSelectors';
 import { useCurrentImageId } from '../stores/selectors/annotationSelectors';
+import useAnnotationStore from '../stores/useAnnotationStore';
 import { useDataset } from '../contexts/DatasetContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { Permission } from '../utils/permissions';
@@ -43,39 +44,76 @@ const AnnotationPageV2 = () => {
   const failObjectsLoad = useFailObjectsLoad();
   const setAnnotationStatus = useSetAnnotationStatus();
   const setDatasetLabels = useSetDatasetLabels();
+  const activateLabelDataset = useActivateLabelDataset();
+  const cachedLabelDatasetId = useLabelDatasetId();
   const cachedLabelsMap = useDatasetLabelsMap();
   const cachedLabels = useDatasetLabels();
   const { currentDataset, datasets } = useDataset();
-  // /annotate-v2 has no dataset route segment; use the dataset selected by the
-  // loader once it becomes available while preserving the URL id for normal
-  // dataset-scoped annotation routes.
-  const effectiveDatasetId = datasetId ?? currentDataset?.id;
   // Resolve from the list rather than currentDataset: the list entries carry
   // my_permissions, and currentDataset may not be the one in the URL yet.
   const routeDataset = React.useMemo(
     () => datasets?.find((d) => String(d.id) === String(datasetId)) || null,
     [datasets, datasetId]
   );
+  // /annotate-v2 has no dataset route segment; use the dataset selected by the
+  // loader once it becomes available while preserving the URL id for normal
+  // dataset-scoped annotation routes.
+  const effectiveDatasetId =
+    routeDataset?.id ??
+    (datasetId != null && !isNaN(datasetId) ? Number(datasetId) : (datasetId ?? currentDataset?.id));
+  const effectiveDatasetIdRef = React.useRef(effectiveDatasetId);
+  effectiveDatasetIdRef.current = effectiveDatasetId;
+
+  // Activate the route/effective dataset in a layout effect so stale label state is
+  // cleared before descendants paint. The store increments its authoritative generation.
+  React.useLayoutEffect(() => {
+    if (effectiveDatasetId != null) {
+      activateLabelDataset(effectiveDatasetId);
+      setHierarchyData(null);
+    }
+  }, [effectiveDatasetId, activateLabelDataset]);
   const { can } = usePermissions(routeDataset);
   const canAnnotate = can(Permission.ANNOTATION_CREATE);
   const [hierarchyData, setHierarchyData] = React.useState(null); // Use state instead of ref to trigger re-renders
 
   // Helper: ensure labels are loaded (uses cache, fetches only once per dataset)
-  const ensureLabelsLoaded = React.useCallback(async (dataset) => {
-    // If labels are already cached for this dataset, return them
-    if (cachedLabels.length > 0 && cachedLabelsMap) {
-      return { labelsArray: cachedLabels, labelsMap: cachedLabelsMap };
+  const ensureLabelsLoaded = React.useCallback(async (targetDatasetId) => {
+    if (targetDatasetId == null) {
+      return { labelsArray: [], labelsMap: null, stale: true };
     }
 
-    if (!dataset) return { labelsArray: [], labelsMap: null };
+    const targetIdStr = String(targetDatasetId);
+    // Use the store generation as the single authoritative source of truth
+    const requestGen = useAnnotationStore.getState().objects.labelDatasetGeneration;
+
+    // If labels are already cached for this dataset, return them
+    // Note: compare cachedLabelDatasetId and check cachedLabelsMap !== null (empty array is a valid cache)
+    if (
+      cachedLabelDatasetId != null &&
+      String(cachedLabelDatasetId) === targetIdStr &&
+      cachedLabelsMap !== null
+    ) {
+      return { labelsArray: cachedLabels, labelsMap: cachedLabelsMap, stale: false };
+    }
 
     try {
-      const labelsData = await fetchLabels(dataset.id);
+      const labelsData = await fetchLabels(targetDatasetId);
+
+      // Verify that after await, both the effective dataset ID and authoritative store generation still match
+      const currentGen = useAnnotationStore.getState().objects.labelDatasetGeneration;
+      if (
+        effectiveDatasetIdRef.current == null ||
+        String(effectiveDatasetIdRef.current) !== targetIdStr ||
+        currentGen !== requestGen
+      ) {
+        return { labelsArray: [], labelsMap: null, stale: true };
+      }
+
       const labelsArray = extractLabelsFromResponse(labelsData);
 
       // Create a map from label ID to label name
       const labelsMap = new Map();
-      labelsArray.forEach(label => {
+      labelsArray.forEach((label) => {
         if (label && label.id && label.name) {
           const labelIdNum = Number(label.id);
           labelsMap.set(labelIdNum, label.name);
@@ -83,15 +121,23 @@ const AnnotationPageV2 = () => {
         }
       });
 
-      // Cache in the store so VisibilityControls and other components can reuse
-      setDatasetLabels(labelsArray, labelsMap);
+      // Cache in the store with targetDatasetId and authoritative generation
+      setDatasetLabels(labelsArray, labelsMap, targetDatasetId, requestGen);
 
-      return { labelsArray, labelsMap };
+      if (
+        effectiveDatasetIdRef.current == null ||
+        String(effectiveDatasetIdRef.current) !== targetIdStr ||
+        useAnnotationStore.getState().objects.labelDatasetGeneration !== requestGen
+      ) {
+        return { labelsArray: [], labelsMap: null, stale: true };
+      }
+
+      return { labelsArray, labelsMap, stale: false };
     } catch (error) {
       console.error('[AnnotationPageV2] Failed to fetch labels:', error);
-      return { labelsArray: [], labelsMap: null };
+      return { labelsArray: [], labelsMap: null, stale: false };
     }
-  }, [cachedLabels, cachedLabelsMap, setDatasetLabels]);
+  }, [cachedLabelDatasetId, cachedLabels, cachedLabelsMap, setDatasetLabels]);
 
   // Load objects with their label names.
   //
@@ -99,10 +145,28 @@ const AnnotationPageV2 = () => {
   // lookup below is awaited, and on a reload the contours can arrive before DatasetLoader
   // has made that image current; without the tag `setCurrentImage` cannot distinguish them
   // from a previous image's and wipes them.
-  const loadObjectsWithLabels = React.useCallback(async (hierarchy, dataset, imageId) => {
-    const { labelsMap } = await ensureLabelsLoaded(dataset);
+  const loadObjectsWithLabels = React.useCallback(async (hierarchy, datasetOrId, imageId) => {
+    const rawTarget = datasetOrId?.id ?? datasetOrId ?? effectiveDatasetIdRef.current;
+    const targetDatasetId =
+      rawTarget != null && !isNaN(rawTarget) ? Number(rawTarget) : rawTarget;
+    if (targetDatasetId == null) return;
+
+    const requestGen = useAnnotationStore.getState().objects.labelDatasetGeneration;
+    const { labelsMap, stale } = await ensureLabelsLoaded(targetDatasetId);
+    if (stale) {
+      return;
+    }
+
+    if (
+      effectiveDatasetIdRef.current == null ||
+      String(effectiveDatasetIdRef.current) !== String(targetDatasetId) ||
+      useAnnotationStore.getState().objects.labelDatasetGeneration !== requestGen
+    ) {
+      return;
+    }
+
     setObjectsFromHierarchy(hierarchy, labelsMap, imageId);
-  }, [setObjectsFromHierarchy, ensureLabelsLoaded]);
+  }, [ensureLabelsLoaded, setObjectsFromHierarchy]);
 
   // Initialize WebSocket session for the current image
   const { isReady, sessionState, runningServices, failedServices } = useAnnotationSession(
@@ -163,21 +227,26 @@ const AnnotationPageV2 = () => {
         // the canvas was empty for no reason.
         // The session's own image id rather than the store's, which may not have caught up
         // yet — the case the tag exists for.
-        loadObjectsWithLabels(message.data, currentDataset, annotationSession.getCurrentImageId());
+        loadObjectsWithLabels(
+          message.data,
+          effectiveDatasetId ?? currentDataset,
+          annotationSession.getCurrentImageId()
+        );
       }
     );
     return unsubscribe;
-  }, [currentDataset, loadObjectsWithLabels]);
+  }, [effectiveDatasetId, currentDataset, loadObjectsWithLabels]);
 
   // Preload models into backend memory when session is ready
   useModelPreloader();
 
   // When both dataset and hierarchy data are available, load objects with labels
   useEffect(() => {
-    if (currentDataset && hierarchyData) {
-      loadObjectsWithLabels(hierarchyData, currentDataset);
+    const targetDataset = effectiveDatasetId ?? currentDataset;
+    if (targetDataset && hierarchyData) {
+      loadObjectsWithLabels(hierarchyData, targetDataset);
     }
-  }, [currentDataset, hierarchyData, loadObjectsWithLabels]);
+  }, [effectiveDatasetId, currentDataset, hierarchyData, loadObjectsWithLabels]);
 
   // Without annotation rights the WebSocket session is refused, and that session
   // is what delivers the contours — so this page would render an empty canvas

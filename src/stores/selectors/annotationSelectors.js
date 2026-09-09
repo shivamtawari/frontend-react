@@ -46,8 +46,11 @@ export const useObjectsVisibility = () => useAnnotationStore(state => state.obje
 export const useObjectColors = () => useAnnotationStore(state => state.objects.colors);
 export const useDatasetLabels = () => useAnnotationStore(state => state.objects.datasetLabels);
 export const useDatasetLabelsMap = () => useAnnotationStore(state => state.objects.datasetLabelsMap);
+export const useLabelDatasetId = () => useAnnotationStore(state => state.objects.labelDatasetId);
+export const useLabelDatasetGeneration = () => useAnnotationStore(state => state.objects.labelDatasetGeneration);
 export const useSetDatasetLabels = () => useAnnotationStore(state => state.setDatasetLabels);
 export const useClearDatasetLabels = () => useAnnotationStore(state => state.clearDatasetLabels);
+export const useActivateLabelDataset = () => useAnnotationStore(state => state.activateLabelDataset);
 
 // Action selectors
 export const useSetCurrentTool = () => useAnnotationStore(state => state.setCurrentTool);

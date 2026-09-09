@@ -15,36 +15,58 @@ export function useLabelsHierarchy(shouldLoad, currentDataset) {
   const [labelsLoading, setLabelsLoading] = useState(false);
 
   useEffect(() => {
-    if (!shouldLoad || !currentDataset) return;
+    if (!shouldLoad || !currentDataset?.id) {
+      setLabelHierarchy([]);
+      setLabelMap(new Map());
+      setLabelsLoading(false);
+      return;
+    }
+
+    // Immediately clear state for new dataset so stale labels don't persist
+    setLabelHierarchy([]);
+    setLabelMap(new Map());
+
+    let cancelled = false;
 
     const loadLabels = async () => {
       setLabelsLoading(true);
       try {
         const labelsData = await fetchLabels(currentDataset.id);
+        if (cancelled) return;
         const labelsArray = extractLabelsFromResponse(labelsData, false); // Include all labels
         
         // Build hierarchical structure
         const hierarchy = buildLabelHierarchy(labelsArray);
-        setLabelHierarchy(hierarchy);
         
         // Create a map for quick lookup
         const map = new Map();
         labelsArray.forEach(label => {
           map.set(label.id, label);
         });
-        setLabelMap(map);
+
+        if (!cancelled) {
+          setLabelHierarchy(hierarchy);
+          setLabelMap(map);
+        }
       } catch (error) {
-        console.error('Failed to load labels:', error);
-        setLabelHierarchy([]);
-        setLabelMap(new Map());
+        if (!cancelled) {
+          console.error('Failed to load labels:', error);
+          setLabelHierarchy([]);
+          setLabelMap(new Map());
+        }
       } finally {
-        setLabelsLoading(false);
+        if (!cancelled) {
+          setLabelsLoading(false);
+        }
       }
     };
 
     loadLabels();
-  }, [shouldLoad, currentDataset]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldLoad, currentDataset?.id]);
 
   return { labelHierarchy, labelMap, labelsLoading };
 }
-

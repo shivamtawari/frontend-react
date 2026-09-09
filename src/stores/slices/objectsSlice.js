@@ -1,12 +1,54 @@
 import { getObjectColor } from '../utils/objectColors';
 import { hasValidLabel } from '../utils/labelValidation';
 
+const normalizeDatasetId = (id) => (id != null ? String(id) : null);
+
 /**
  * Objects slice - manages annotation objects, selection, visibility, and colors
  */
 export const createObjectsSlice = (set) => ({
+  activateLabelDataset: (datasetId) => set((state) => {
+    const nextNormalized = normalizeDatasetId(datasetId);
+    const currentNormalized = normalizeDatasetId(state.objects.labelDatasetId);
+    if (nextNormalized === currentNormalized) {
+      return;
+    }
+    state.objects.labelDatasetId = datasetId != null ? datasetId : null;
+    state.objects.labelDatasetGeneration = (state.objects.labelDatasetGeneration || 0) + 1;
+    state.objects.datasetLabels = [];
+    state.objects.datasetLabelsMap = null;
+    if (state.workspace) {
+      state.workspace.activeLabelId = null;
+      state.workspace.labelColorOverrides = {};
+      if (state.workspace.picker) {
+        state.workspace.picker = null;
+      }
+    }
+    if (state.objects.visibility) {
+      state.objects.visibility.labels = {};
+      state.objects.visibility.rootLabelIds = [];
+    }
+  }),
+
   // Dataset labels cache – populated once per dataset, shared by all components
-  setDatasetLabels: (labelsArray, labelsMap) => set((state) => {
+  setDatasetLabels: (labelsArray, labelsMap, datasetId = undefined, generation = undefined) => set((state) => {
+    if (
+      datasetId !== undefined &&
+      state.objects.labelDatasetId !== null &&
+      normalizeDatasetId(datasetId) !== normalizeDatasetId(state.objects.labelDatasetId)
+    ) {
+      return;
+    }
+    if (
+      generation !== undefined &&
+      state.objects.labelDatasetGeneration !== undefined &&
+      state.objects.labelDatasetGeneration !== generation
+    ) {
+      return;
+    }
+    if (datasetId !== undefined && state.objects.labelDatasetId === null) {
+      state.objects.labelDatasetId = datasetId;
+    }
     state.objects.datasetLabels = labelsArray;
     state.objects.datasetLabelsMap = labelsMap;
     if (state.workspace?.activeLabelId != null) {
@@ -18,10 +60,20 @@ export const createObjectsSlice = (set) => ({
   }),
 
   clearDatasetLabels: () => set((state) => {
+    state.objects.labelDatasetId = null;
+    state.objects.labelDatasetGeneration = (state.objects.labelDatasetGeneration || 0) + 1;
     state.objects.datasetLabels = [];
     state.objects.datasetLabelsMap = null;
-    if (state.workspace?.activeLabelId != null) {
+    if (state.workspace) {
       state.workspace.activeLabelId = null;
+      state.workspace.labelColorOverrides = {};
+      if (state.workspace.picker) {
+        state.workspace.picker = null;
+      }
+    }
+    if (state.objects.visibility) {
+      state.objects.visibility.labels = {};
+      state.objects.visibility.rootLabelIds = [];
     }
   }),
 
