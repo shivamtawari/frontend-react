@@ -731,14 +731,14 @@ const SegmentationOverlay = ({ canvasRef, zoomLevel = 1, panOffset = { x: 0, y: 
         
         if (refinementModeActive) {
           if (isRefinementObject) {
-            // Highlight refinement object with high visibility
-            fillOpacity = 0.45;
+            // Highlight refinement object with high visibility outline-only
+            fillOpacity = 0;
             strokeWidth = 5;
             glowIntensity = 12;
             strokeColor = object.color; // Use object's color but make it more prominent
           } else {
-            // Other objects: keep visible for context but less prominent
-            fillOpacity = 0.15;
+            // Other objects: keep visible for context with thinner outline
+            fillOpacity = 0;
             strokeWidth = 2;
             glowIntensity = 2;
             strokeColor = object.color;
