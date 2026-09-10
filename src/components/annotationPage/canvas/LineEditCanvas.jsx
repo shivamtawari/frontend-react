@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { Stage, Layer, Line } from 'react-konva';
 import { Hexagon, Spline, X } from 'lucide-react';
 import {
@@ -26,9 +26,11 @@ import { pixelArrayToNormalized } from '../../../utils/coordinateUtils';
 import { mergeLineIntoContour } from '../../../utils/contourEditing';
 import { splitObjectByLine } from '../../../utils/contourOperations';
 import { useToast } from '../../../contexts/ToastContext';
+import useAnnotationStore from '../../../stores/useAnnotationStore';
 import useCanvasViewport from '../../../hooks/useCanvasViewport';
 import usePromptDrawing from '../../../hooks/usePromptDrawing';
 import DrawingPreview from './prompts/DrawingPreview';
+import ModeBanner from '../workspace/ModeBanner';
 
 /**
  * Line-edit Canvas
@@ -57,6 +59,13 @@ const MODES = [
   { id: 'polygon', label: 'Polygon', icon: Hexagon, hotkey: 'G' },
 ];
 
+const hasCoordinates = (object, coordinates) =>
+  ['x', 'y'].every((axis) =>
+    Array.isArray(object?.[axis]) &&
+    object[axis].length === coordinates[axis].length &&
+    object[axis].every((value, index) => value === coordinates[axis][index])
+  );
+
 const LineEditCanvas = () => {
   const stageRef = useRef(null);
   const active = useLineEditActive();
@@ -70,6 +79,18 @@ const LineEditCanvas = () => {
   const maskId = useCurrentMaskId();
   const { addToast } = useToast();
   const isSplit = editMode === 'split';
+  const [isSaving, setIsSaving] = useState(false);
+
+  const targetObject = useMemo(
+    () => objectsList.find((object) => object.id === objectId) || null,
+    [objectsList, objectId]
+  );
+  // Prefer the live object so each reshape starts from the outline produced by
+  // the previous one. The stored original remains a fallback if the object list
+  // has not caught up yet.
+  const workingContour = targetObject?.x?.length && targetObject?.y?.length
+    ? targetObject
+    : original;
 
   const mode = useManualDrawMode();
   const setMode = useSetManualDrawMode();
@@ -112,20 +133,20 @@ const LineEditCanvas = () => {
 
   // The contour being reshaped, in stage pixels, as a faint dashed reference.
   const referencePoints = useMemo(() => {
-    if (!original || !imageObject || !imageDimensions.baseScale) return null;
+    if (!workingContour || !imageObject || !imageDimensions.baseScale) return null;
     const pts = [];
-    for (let i = 0; i < original.x.length; i++) {
+    for (let i = 0; i < workingContour.x.length; i++) {
       const [sx, sy] = toStage({
-        x: original.x[i] * imageObject.width,
-        y: original.y[i] * imageObject.height,
+        x: workingContour.x[i] * imageObject.width,
+        y: workingContour.y[i] * imageObject.height,
       });
       pts.push(sx, sy);
     }
     return pts;
-  }, [original, imageObject, imageDimensions.baseScale, toStage]);
+  }, [workingContour, imageObject, imageDimensions.baseScale, toStage]);
 
   const handleDrawFinalize = useCallback(async (points, { freehand }) => {
-    if (!imageObject || points.length < 2 || contourId == null || !original) return;
+    if (isSaving || !imageObject || points.length < 2 || contourId == null || !workingContour) return;
 
     const linePixel = points.map((p) => ({ x: p.x, y: p.y }));
 
@@ -151,9 +172,9 @@ const LineEditCanvas = () => {
     }
 
     // Merge in pixel space (avoids the x/y aspect skew of normalized coordinates).
-    const contourPixel = original.x.map((x, i) => ({
+    const contourPixel = workingContour.x.map((x, i) => ({
       x: x * imageObject.width,
-      y: original.y[i] * imageObject.height,
+      y: workingContour.y[i] * imageObject.height,
     }));
     const merged = mergeLineIntoContour(contourPixel, linePixel);
 
@@ -175,18 +196,24 @@ const LineEditCanvas = () => {
     }
 
     // Optimistic: show the reshaped outline immediately, revert if the save fails.
+    setIsSaving(true);
     updateObject(objectId, { x: normalized.x, y: normalized.y, path: null });
-    stopLineEdit();
     try {
       const response = await annotationSession.modifyObject(contourId, { x: normalized.x, y: normalized.y });
       if (response && response.success === false) throw new Error(response.message || 'Save rejected');
       addToast({ type: 'success', message: `Outline reshaped (${freehand ? 'freehand' : 'polygon'}).` });
     } catch (err) {
-      updateObject(objectId, { x: original.x, y: original.y, path: null });
+      // Do not let a late failure overwrite a newer edit made after this request.
+      const currentObject = useAnnotationStore.getState().objects.list.find((object) => object.id === objectId);
+      if (hasCoordinates(currentObject, normalized)) {
+        updateObject(objectId, { x: workingContour.x, y: workingContour.y, path: null });
+      }
       addToast({ type: 'error', message: err.message || 'Could not reshape the outline. Reverted.' });
+    } finally {
+      setIsSaving(false);
     }
-  }, [imageObject, contourId, objectId, original, updateObject, stopLineEdit, addToast,
-      isSplit, objectsList, maskId]);
+  }, [isSaving, imageObject, contourId, objectId, workingContour, updateObject, stopLineEdit,
+      addToast, isSplit, objectsList, maskId]);
 
   const {
     polygonPoints,
@@ -196,6 +223,7 @@ const LineEditCanvas = () => {
     handleMouseUp: drawMouseUp,
     handleDblClick: drawDblClick,
     handleKeyDown: drawKeyDown,
+    resetDrawing,
   } = usePromptDrawing({
     mode,
     stageToImageCoords,
@@ -206,13 +234,13 @@ const LineEditCanvas = () => {
   });
 
   const handleMouseDown = useCallback((e) => {
-    if (!active) return;
+    if (!active || isSaving) return;
     if (e.evt.button === 1 || (e.evt.button === 0 && isPanMode)) {
       handlePanStart(e);
       return;
     }
     drawMouseDown(e);
-  }, [active, isPanMode, handlePanStart, drawMouseDown]);
+  }, [active, isSaving, isPanMode, handlePanStart, drawMouseDown]);
 
   const handleMouseMove = useCallback((e) => {
     if (isPanning) {
@@ -237,31 +265,53 @@ const LineEditCanvas = () => {
   useEffect(() => {
     if (!active) return undefined;
     const onKeyDown = (e) => {
+      const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        stopLineEdit();
+        return;
+      }
       if (drawKeyDown(e)) {
         e.preventDefault();
         e.stopPropagation();
         return;
       }
-      const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
-      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === 'g') { e.preventDefault(); setMode('polygon'); }
       else if (key === 'f') { e.preventDefault(); setMode('freehand'); }
-      else if (e.code === 'Escape') { e.preventDefault(); stopLineEdit(); }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [active, drawKeyDown, setMode, stopLineEdit]);
 
   if (!active) return null;
   if (imageLoading || imageError || !imageObject) return null;
 
   const cursor = isPanning ? 'grabbing' : isPanMode ? 'grab' : 'crosshair';
+  const title = isSplit ? 'Split Mode' : 'Reshape Mode';
+  const instruction = isSplit
+    ? (mode === 'polygon'
+      ? 'Click across the object · double-click or Enter to split'
+      : 'Drag across the object · release to split')
+    : (mode === 'polygon'
+      ? 'Click across the boundary · double-click or Enter to reshape'
+      : 'Drag across the boundary · release to reshape');
 
   return (
     <div ref={containerRef} className="absolute inset-0 z-[60]" style={{ cursor }}>
+      <ModeBanner
+        title={title}
+        subject={targetObject?.label || (objectId != null ? `Object #${objectId}` : null)}
+        hint={instruction}
+        dotClass="bg-ac"
+        exitLabel={isSplit ? 'Exit split' : 'Exit reshape'}
+        onExit={stopLineEdit}
+      />
+
       {/* Mode selector */}
-      <div className="absolute top-4 left-4 z-50 flex items-center gap-1 bg-p1 backdrop-blur-sm border border-ln rounded-xl shadow-lg p-1">
+      <div className="absolute top-[76px] left-3 z-[80] flex items-center gap-1 bg-p1 backdrop-blur-sm border border-ln rounded-xl shadow-lg p-1">
         {MODES.map(({ id, label, icon: Icon, hotkey }) => {
           const isActive = mode === id;
           return (
@@ -270,36 +320,34 @@ const LineEditCanvas = () => {
               type="button"
               onClick={() => setMode(id)}
               title={`${label} (${hotkey})`}
+              aria-label={`${label} drawing mode`}
+              aria-pressed={isActive}
+              disabled={isSaving}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 isActive ? 'bg-accent text-onAccent shadow-sm' : 'text-t2 hover:bg-hv'
-              }`}
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               <Icon className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{label}</span>
             </button>
           );
         })}
-        <div className="w-px h-5 bg-hv2 mx-1" />
-        <button
-          type="button"
-          onClick={stopLineEdit}
-          title="Cancel (Esc)"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-t2 hover:bg-hv transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Cancel</span>
-        </button>
-      </div>
-
-      {/* Instruction */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-scrim text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-lg z-40 pointer-events-none text-center">
-        {isSplit
-          ? (mode === 'polygon'
-            ? 'Click a line straight across the object · double-click or Enter to finish · it becomes two objects'
-            : 'Drag a line straight across the object · release to finish · it becomes two objects')
-          : (mode === 'polygon'
-            ? 'Click a line across the boundary · double-click or Enter to finish · outside adds, inside cuts'
-            : 'Drag a line across the boundary · release to finish · outside adds a region, inside cuts one off')}
+        {mode === 'polygon' && polygonPoints.length > 0 && (
+          <>
+            <div className="w-px h-5 bg-hv2 mx-1" />
+            <button
+              type="button"
+              onClick={resetDrawing}
+              title="Clear current line"
+              aria-label="Clear current line"
+              disabled={isSaving}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-t2 hover:bg-hv transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Clear line</span>
+            </button>
+          </>
+        )}
       </div>
 
       <Stage
