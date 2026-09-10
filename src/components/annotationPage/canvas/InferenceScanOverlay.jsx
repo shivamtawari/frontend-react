@@ -23,7 +23,7 @@ const AC = '20, 184, 166';
  * Purely atmospheric and always `pointer-events-none` — the action bar stays
  * reachable while it runs.
  */
-const InferenceScanOverlay = ({ containerRef }) => {
+const InferenceScanOverlay = ({ containerRef, zoomLevel = 1, panOffset = { x: 0, y: 0 } }) => {
   const isSubmitting = useIsSubmitting();
   const isRunningSuggestion = useIsRunningSuggestion();
   const isRunningInstance = useIsRunningInstance();
@@ -37,7 +37,11 @@ const InferenceScanOverlay = ({ containerRef }) => {
   return (
     <div
       className="absolute inset-0 pointer-events-none animate-dcFadeSlow"
-      style={{ zIndex: 50 }}
+      style={{
+        zIndex: 50,
+        transform: `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+        transformOrigin: 'center center',
+      }}
       aria-hidden="true"
     >
       <div

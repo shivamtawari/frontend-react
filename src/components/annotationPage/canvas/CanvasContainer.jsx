@@ -130,7 +130,11 @@ const CanvasContainer = ({ imageObject, currentImage, zoomLevel, panOffset }) =>
       )}
       <PatchPickOverlay canvasRef={canvasRef} />
       <ScaleBarIndicator canvasRef={canvasRef} zoomLevel={zoomLevel} />
-      <InferenceScanOverlay containerRef={containerRef} />
+      <InferenceScanOverlay
+        containerRef={containerRef}
+        zoomLevel={zoomLevel}
+        panOffset={panOffset}
+      />
       <ObjectContextMenu />
 
       {annotating && currentTool === 'ai_annotation' && (
