@@ -78,3 +78,56 @@ describe('contours arriving before the image becomes current', () => {
     expect(objects.loading).toBe(true);
   });
 });
+
+describe('AI prompt state when the current image changes', () => {
+  beforeEach(() => {
+    useAnnotationStore.setState((state) => {
+      state.images.currentImage = null;
+      state.images.currentImageId = null;
+      state.aiAnnotation.prompts = [];
+      state.aiAnnotation.activePreview = null;
+      state.aiAnnotation.undoStack = [];
+      state.aiAnnotation.redoStack = [];
+    });
+  });
+
+  test('clears prompt state for a different image but preserves it for the same image', () => {
+    const {
+      addBoxPrompt,
+      addPointPrompt,
+      redoLastAction,
+      setActivePreview,
+      setCurrentImage,
+      undoLastAction,
+    } = useAnnotationStore.getState();
+    const imageOne = { id: 1, name: 'image-one' };
+    const imageTwo = { id: 2, name: 'image-two' };
+
+    setCurrentImage(imageOne);
+    addPointPrompt(10, 20, 'positive');
+    addBoxPrompt(1, 2, 3, 4);
+    undoLastAction();
+    redoLastAction();
+    undoLastAction();
+    setActivePreview({ mask: 'preview' });
+
+    const beforeSameImage = structuredClone(useAnnotationStore.getState().aiAnnotation);
+    setCurrentImage(imageOne);
+
+    expect(useAnnotationStore.getState().aiAnnotation).toMatchObject({
+      prompts: beforeSameImage.prompts,
+      activePreview: beforeSameImage.activePreview,
+      undoStack: beforeSameImage.undoStack,
+      redoStack: beforeSameImage.redoStack,
+    });
+
+    setCurrentImage(imageTwo);
+
+    expect(useAnnotationStore.getState().aiAnnotation).toMatchObject({
+      prompts: [],
+      activePreview: null,
+      undoStack: [],
+      redoStack: [],
+    });
+  });
+});

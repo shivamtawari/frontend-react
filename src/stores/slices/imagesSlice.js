@@ -45,6 +45,11 @@ export const createImagesSlice = (set) => ({
         state.objects.loadedForImageId = null;
       }
 
+      // Prompt coordinates and their undo history belong to the image they were created on.
+      state.aiAnnotation.prompts = [];
+      state.aiAnnotation.activePreview = null;
+      state.aiAnnotation.undoStack = [];
+      state.aiAnnotation.redoStack = [];
       state.aiAnnotation.refinementMode.active = false;
       state.aiAnnotation.refinementMode.objectId = null;
       state.aiAnnotation.refinementMode.contourId = null;
@@ -187,4 +192,3 @@ export const createImagesSlice = (set) => ({
     state.images.scale.calibrationPoints = null;
   }),
 });
-
