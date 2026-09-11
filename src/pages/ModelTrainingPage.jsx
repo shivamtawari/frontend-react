@@ -446,6 +446,7 @@ export default function ModelTrainingPage() {
   // Initial load: labels, models, runs.
   useEffect(() => {
     if (!datasetId) return;
+    let cancelled = false;
     streamRef.current?.abort();
     streamRef.current = null;
     restoredDatasetIdRef.current = null;
@@ -460,30 +461,26 @@ export default function ModelTrainingPage() {
     setModelKey("");
     setModelLoadStatus("loading");
     setModelLoadError(null);
+    setLabels([]);
+    setSelectedLabelIds(new Set());
     setAnnotationCountStatus("loading");
     setAnnotationCounts({});
     (async () => {
+      let loadedLabels = [];
       try {
         const labelRes = await fetchLabels(datasetId);
+        if (cancelled) return;
         const idMap = labelRes?.labels?.id_to_label_object || {};
-        const list = Object.values(idMap).map((l) => ({ id: l.id, name: l.name }));
-        setLabels(list);
-        setSelectedLabelIds(new Set(list.map((l) => l.id)));
+        loadedLabels = Object.values(idMap).map((l) => ({ id: l.id, name: l.name }));
+        setLabels(loadedLabels);
+        setSelectedLabelIds(new Set(loadedLabels.map((l) => l.id)));
       } catch (e) {
+        if (cancelled) return;
         setError(e.message || "Failed to load labels.");
       }
       try {
-        const countRes = await getInstanceLabelAnnotationCounts(datasetId);
-        if (countRes?.success !== true || !countRes.reviewed_annotation_counts) {
-          throw new Error("Annotation counts were not returned.");
-        }
-        setAnnotationCounts(countRes.reviewed_annotation_counts);
-        setAnnotationCountStatus("success");
-      } catch {
-        setAnnotationCountStatus("error");
-      }
-      try {
         const modelRes = await getInstanceModels();
+        if (cancelled) return;
         const list = Array.isArray(modelRes?.result)
           ? modelRes.result.filter((model) => model?.registry_key && model.trainable === true)
           : [];
@@ -494,13 +491,38 @@ export default function ModelTrainingPage() {
         setModelKey(list[0].registry_key);
         setModelLoadStatus("success");
       } catch (e) {
+        if (cancelled) return;
         setModels([]);
         setModelKey("");
         setModelLoadStatus("error");
         setModelLoadError(e.message || "Unable to load trainable instance segmentation models.");
       }
+      try {
+        const countRes = await getInstanceLabelAnnotationCounts(datasetId);
+        if (cancelled) return;
+        if (countRes?.success !== true || !countRes.reviewed_annotation_counts) {
+          throw new Error("Annotation counts were not returned.");
+        }
+        const reviewedCounts = countRes.reviewed_annotation_counts;
+        setAnnotationCounts(reviewedCounts);
+        setAnnotationCountStatus("success");
+        const positiveLabelIds = new Set(
+          loadedLabels
+            .filter((label) => Number(reviewedCounts[label.id]) > 0)
+            .map((label) => label.id)
+        );
+        setSelectedLabelIds((current) => new Set(
+          [...current].filter((id) => positiveLabelIds.has(id))
+        ));
+      } catch {
+        if (cancelled) return;
+        setAnnotationCountStatus("error");
+      }
     })();
     loadRuns();
+    return () => {
+      cancelled = true;
+    };
   }, [datasetId, loadRuns]);
 
   // Initialize hyperparameter values from the selected model's declared defaults.
@@ -547,8 +569,25 @@ export default function ModelTrainingPage() {
     return next;
   });
 
+  const countKnown = annotationCountStatus === "success";
+  const selectableLabels = countKnown
+    ? labels.filter((label) => Number(annotationCounts[label.id]) > 0)
+    : [];
+  const hasInvalidSelectedLabel = countKnown && [...selectedLabelIds].some(
+    (id) => !(Number(annotationCounts[id]) > 0)
+  );
+  const selectionSummary = countKnown
+    ? `${selectedLabelIds.size}/${selectableLabels.length}`
+    : annotationCountStatus === "loading" ? "checking counts…" : "counts unavailable";
+
   const handleStart = async () => {
-    if (modelLoadStatus !== "success" || !selectedModel || getRunNameError(modelRunName)) return;
+    if (
+      modelLoadStatus !== "success" ||
+      annotationCountStatus !== "success" ||
+      !selectedModel ||
+      getRunNameError(modelRunName) ||
+      hasInvalidSelectedLabel
+    ) return;
     setError(null);
     setIsStarting(true);
     try {
@@ -626,11 +665,9 @@ export default function ModelTrainingPage() {
     setMode("config");
   };
 
-  const allSelected = labels.length > 0 && selectedLabelIds.size === labels.length;
-  const noAnnotations =
-    annotationCountStatus === "success" &&
-    selectedLabelIds.size > 0 &&
-    [...selectedLabelIds].every((id) => (annotationCounts[id] ?? 0) === 0);
+  const allSelected = selectableLabels.length > 0 &&
+    selectedLabelIds.size === selectableLabels.length &&
+    selectableLabels.every((label) => selectedLabelIds.has(label.id));
   const runNameError = getRunNameError(modelRunName);
   const hasActiveRun = activeTaskId != null || runs.some((run) => !TERMINAL.has(run.state));
 
@@ -734,35 +771,47 @@ export default function ModelTrainingPage() {
                 {/* Labels */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-sm font-medium text-t1">Classes to train ({selectedLabelIds.size}/{labels.length})</label>
+                    <label className="block text-sm font-medium text-t1">Classes to train ({selectionSummary})</label>
                     <button
                       type="button"
-                      onClick={() => setSelectedLabelIds(allSelected ? new Set() : new Set(labels.map((l) => l.id)))}
-                      className="text-xs text-ac hover:underline"
+                      onClick={() => setSelectedLabelIds(allSelected ? new Set() : new Set(selectableLabels.map((l) => l.id)))}
+                      disabled={selectableLabels.length === 0}
+                      className="text-xs text-ac hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {allSelected ? "Clear all" : "Select all"}
                     </button>
                   </div>
                   {annotationCountStatus === "loading" && (
-                    <p className="text-[11px] text-t3 mb-1" role="status">Loading annotation counts…</p>
+                    <p className="text-[11px] text-t3 mb-1" role="status">Checking reviewed annotation counts. Training will be available once they finish loading.</p>
                   )}
                   {annotationCountStatus === "error" && (
-                    <p className="text-[11px] text-warn mb-1" role="alert">
-                      Unable to load annotation counts. Training will be validated by the backend.
+                    <p className="text-[11px] text-t3 mb-1" role="status">
+                      Reviewed annotation counts are unavailable, so training is disabled until they can be loaded.
                     </p>
                   )}
                   <div className="max-h-44 overflow-y-auto border border-ln rounded-lg divide-y divide-ln">
                     {labels.length === 0 && <p className="text-xs text-t3 p-3">This dataset has no labels.</p>}
                     {labels.map((l) => {
-                      const countKnown = annotationCountStatus === "success";
                       const count = countKnown ? (annotationCounts[l.id] ?? 0) : null;
+                      const hasReviewedAnnotations = countKnown && Number(count) > 0;
+                      const disabled = countKnown && !hasReviewedAnnotations;
                       return (
-                        <label key={l.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-hv">
-                          <input type="checkbox" checked={selectedLabelIds.has(l.id)} onChange={() => toggleLabel(l.id)} className="h-4 w-4" />
+                        <label
+                          key={l.id}
+                          className={`flex items-center gap-2 px-3 py-2 text-sm ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-hv"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedLabelIds.has(l.id)}
+                            onChange={() => toggleLabel(l.id)}
+                            disabled={disabled}
+                            className="h-4 w-4"
+                          />
                           <span className="flex-1">{l.name}</span>
+                          {disabled && <span className="text-[10px] text-t3">No reviewed annotations</span>}
                           <span
                             className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${countKnown
-                              ? (count === 0 ? "bg-errBg text-err" : "bg-okBg text-ok")
+                              ? (hasReviewedAnnotations ? "bg-okBg text-ok" : "bg-well text-t3")
                               : "bg-well text-t3"
                             }`}
                             title={countKnown
@@ -775,7 +824,12 @@ export default function ModelTrainingPage() {
                       );
                     })}
                   </div>
-                  <p className="text-[11px] text-t3 mt-1">Multiclass by default — all labels are selected. Deselect to train a smaller model.</p>
+                  <p className="text-[11px] text-t3 mt-1">Multiclass by default — labels with reviewed annotations are selected. Deselect to train a smaller model.</p>
+                  {countKnown && labels.length > 0 && selectableLabels.length === 0 && (
+                    <p className="text-xs text-t3 mt-2" role="status">
+                      No trainable labels yet. Review annotations for at least one label before training.
+                    </p>
+                  )}
                 </div>
 
                 {/* Advanced (model-declared params) */}
@@ -829,12 +883,6 @@ export default function ModelTrainingPage() {
                   </p>
                 </div>
 
-                {noAnnotations && (
-                  <p className="text-xs text-err">
-                    The selected classes have no reviewed annotations. Review some annotations before training.
-                  </p>
-                )}
-
                 {hasActiveRun && (
                   <div className="flex items-center gap-2 p-3 bg-warnBg border border-warnLn rounded-lg text-sm text-warn">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -844,7 +892,7 @@ export default function ModelTrainingPage() {
 
                 <button
                   onClick={handleStart}
-                  disabled={modelLoadStatus !== "success" || !selectedModel || isStarting || selectedLabelIds.size === 0 || noAnnotations || Boolean(runNameError)}
+                  disabled={modelLoadStatus !== "success" || annotationCountStatus !== "success" || !selectedModel || isStarting || selectedLabelIds.size === 0 || hasInvalidSelectedLabel || Boolean(runNameError)}
                   className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-onAccent bg-accent rounded-lg hover:brightness-110 transition-colors disabled:opacity-60"
                 >
                   {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
