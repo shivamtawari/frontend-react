@@ -525,7 +525,7 @@ const ObjectContextMenu = () => {
   return (
     <div
       ref={menuRef}
-      className="absolute z-50 w-[216px] p-[5px] rounded-9 bg-p2 border border-ln2 shadow-ctx animate-dcPop"
+      className="absolute z-[80] w-[216px] p-[5px] rounded-9 bg-p2 border border-ln2 shadow-ctx animate-dcPop"
       style={{
         left: `${adjustedPosition.x}px`,
         top: `${adjustedPosition.y}px`,
