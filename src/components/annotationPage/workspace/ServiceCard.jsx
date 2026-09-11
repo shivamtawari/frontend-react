@@ -69,6 +69,8 @@ const ServiceCard = ({ service }) => {
   const selectedModelObj =
     (service.models || []).find((m) => m.id === service.selectedModel) || service.models?.[0];
   const isFavorite = favorites?.[service.task] === service.selectedModel;
+  const canRun =
+    service.canRun ?? (hasModels && !service.isLoading && !service.isRunning);
 
   return (
     <div className="rounded-9 border border-ln2 bg-well px-[10px] py-[9px]">
@@ -135,6 +137,12 @@ const ServiceCard = ({ service }) => {
             </p>
           )}
 
+          {service.selectionNotice && (
+            <p className="mt-[6px] text-sect leading-[1.5] text-t3">
+              {service.selectionNotice}
+            </p>
+          )}
+
           {selectedModelObj?.supported_prompt_types?.length > 0 && (
             <PromptTypeChips types={selectedModelObj.supported_prompt_types} />
           )}
@@ -151,7 +159,7 @@ const ServiceCard = ({ service }) => {
               <button
                 type="button"
                 onClick={service.onRun}
-                disabled={service.isRunning || !hasModels}
+                disabled={!canRun}
                 className="inline-flex items-center gap-[6px] h-[26px] px-[10px] rounded-6 bg-accent text-onAccent text-row font-bold transition-[filter] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {service.isRunning ? (

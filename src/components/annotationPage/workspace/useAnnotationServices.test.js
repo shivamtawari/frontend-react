@@ -24,6 +24,8 @@ const { mockState, mockRunInstance } = vi.hoisted(() => ({
         promptedModel: null,
         suggestionModel: null,
         instanceModel: null,
+        isLoadingInstance: false,
+        isRunningInstance: false,
     },
 }));
 
@@ -48,9 +50,9 @@ vi.mock("../../../stores/selectors/annotationSelectors", () => ({
     useFetchAvailableInstanceModels: () => vi.fn(),
     useIsLoadingPromptedModels: () => false,
     useIsLoadingSuggestionModels: () => false,
-    useIsLoadingInstanceModels: () => false,
+    useIsLoadingInstanceModels: () => mockState.isLoadingInstance,
     useIsRunningSuggestion: () => false,
-    useIsRunningInstance: () => false,
+    useIsRunningInstance: () => mockState.isRunningInstance,
     usePromptedModel: () => mockState.promptedModel,
     useSuggestionModel: () => mockState.suggestionModel,
     useInstanceModel: () => mockState.instanceModel,
@@ -87,6 +89,8 @@ describe("useAnnotationServices with dataset routing policy", () => {
         mockState.promptedModel = null;
         mockState.suggestionModel = null;
         mockState.instanceModel = null;
+        mockState.isLoadingInstance = false;
+        mockState.isRunningInstance = false;
         mockState.activeLabelId = 1;
         mockState.favorites = {};
     });
@@ -289,5 +293,87 @@ describe("useAnnotationServices with dataset routing policy", () => {
 
         expect(mockRunInstance).toHaveBeenCalledWith("patch");
         expect(mockRunInstance).not.toHaveBeenCalledWith("patch", inputs);
+    });
+
+    it("keeps a manually selected instance model runnable when the saved default is stale", async () => {
+        getInferenceRoutingPolicy.mockResolvedValueOnce({
+            dataset_id: 101,
+            bindings: [
+                {
+                    task: "instance-segmentation",
+                    label_id: null,
+                    model_registry_key: "missing-default",
+                },
+            ],
+        });
+
+        const { result, rerender } = renderHook(() => useAnnotationServices());
+
+        await waitFor(() => {
+            expect(mockSetInstanceModel).toHaveBeenCalledWith("m2f-generic");
+        });
+
+        mockState.instanceModel = "m2f-generic";
+        rerender();
+
+        const instanceService = result.current.services.find((service) => service.key === "instance");
+        expect(instanceService.canRun).toBe(true);
+        expect(instanceService.onRun).toEqual(expect.any(Function));
+        expect(instanceService.selectionNotice).toBe(
+            "Session override for this image — dataset default remains unchanged."
+        );
+
+        act(() => {
+            instanceService.onRun();
+        });
+        expect(result.current.showInstanceWarning).toBe(true);
+
+        act(() => {
+            result.current.confirmInstanceRun();
+        });
+        expect(mockRunInstance).toHaveBeenCalledWith("patch");
+    });
+
+    it("treats a selected model as an override when the dataset has no instance default", async () => {
+        getInferenceRoutingPolicy.mockResolvedValueOnce(null);
+
+        const { result, rerender } = renderHook(() => useAnnotationServices());
+
+        await waitFor(() => {
+            expect(mockSetInstanceModel).toHaveBeenCalledWith("m2f-generic");
+        });
+
+        mockState.instanceModel = "m2f-routed-default";
+        rerender();
+
+        const instanceService = result.current.services.find((service) => service.key === "instance");
+        expect(instanceService.canRun).toBe(true);
+        expect(instanceService.selectionNotice).toBe(
+            "Session override for this image — dataset default remains unchanged."
+        );
+    });
+
+    it("disables instance runs only while models load or another run is active", async () => {
+        getInferenceRoutingPolicy.mockResolvedValueOnce(null);
+
+        const { result, rerender } = renderHook(() => useAnnotationServices());
+
+        await waitFor(() => {
+            expect(mockSetInstanceModel).toHaveBeenCalledWith("m2f-generic");
+        });
+
+        mockState.instanceModel = "m2f-generic";
+        mockState.isLoadingInstance = true;
+        rerender();
+        expect(result.current.services.find((service) => service.key === "instance").canRun).toBe(false);
+
+        mockState.isLoadingInstance = false;
+        mockState.isRunningInstance = true;
+        rerender();
+        expect(result.current.services.find((service) => service.key === "instance").canRun).toBe(false);
+
+        mockState.isRunningInstance = false;
+        rerender();
+        expect(result.current.services.find((service) => service.key === "instance").canRun).toBe(true);
     });
 });

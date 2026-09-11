@@ -128,23 +128,27 @@ export default function useAnnotationServices() {
         : null,
     [policy, policyReady, availableInstanceModels]
   );
-  const instanceBindingInvalid =
-    policyReady && Boolean(instanceRouting?.binding) && !isUsableBinding(instanceRouting);
+  const selectedInstanceModel = availableInstanceModels.find((model) =>
+    matchesModelKey(model, 'instance-segmentation', instanceModel)
+  );
+  const hasUsableSelectedInstanceModel = Boolean(selectedInstanceModel);
   const instanceInputs = getMatchingBindingInputs(
     instanceRouting,
     'instance-segmentation',
     instanceModel
   );
   const canRunInstance =
-    policyResolved &&
-    !instanceBindingInvalid &&
+    !isLoadingInstance &&
     !isRunningInstance &&
-    Boolean(
-      instanceModel &&
-        availableInstanceModels.some((model) =>
-          matchesModelKey(model, 'instance-segmentation', instanceModel)
-        )
-    );
+    hasUsableSelectedInstanceModel;
+  const instanceDefaultIsValid =
+    policyResolved &&
+    isUsableBinding(instanceRouting) &&
+    matchesModelKey(instanceRouting.model, 'instance-segmentation', instanceModel);
+  const instanceSelectionNotice =
+    policyResolved && hasUsableSelectedInstanceModel && !instanceDefaultIsValid
+      ? 'Session override for this image — dataset default remains unchanged.'
+      : null;
 
   useEffect(() => {
     if (instanceRunRequested) {
@@ -233,13 +237,9 @@ export default function useAnnotationServices() {
   // Whole-image Instance Segmentation model resolution (task default -> favorite/first)
   useEffect(() => {
     if (!policyResolved || availableInstanceModels.length === 0) return;
-    if (instanceRouting?.binding) {
-      if (isUsableBinding(instanceRouting)) {
-        const modelId = getModelKey(instanceRouting.model);
-        if (modelId) setInstanceModel(modelId);
-      } else {
-        setInstanceModel(null);
-      }
+    if (instanceRouting?.binding && isUsableBinding(instanceRouting)) {
+      const modelId = getModelKey(instanceRouting.model);
+      if (modelId) setInstanceModel(modelId);
       return;
     }
 
@@ -310,7 +310,11 @@ export default function useAnnotationServices() {
       selectedModel: instanceModel,
       setSelectedModel: setInstanceModel,
       isRunning: isRunningInstance,
-      onRun: canRunInstance ? () => setShowInstanceWarning(true) : undefined,
+      canRun: canRunInstance,
+      onRun: () => {
+        if (canRunInstance) setShowInstanceWarning(true);
+      },
+      selectionNotice: instanceSelectionNotice,
     },
     {
       key: 'suggestion',
