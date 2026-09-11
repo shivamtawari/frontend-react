@@ -221,6 +221,149 @@ describe("Task 3: Frontend lifecycle presentation normalization", () => {
   });
 });
 
+describe("Zero-annotation training prevention", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchLabels.mockResolvedValue({
+      labels: {
+        id_to_label_object: {
+          1: { id: 1, name: "annotated" },
+          2: { id: 2, name: "empty" },
+        },
+      },
+    });
+    getInstanceLabelAnnotationCounts.mockResolvedValue({
+      success: true,
+      reviewed_annotation_counts: { 1: 4, 2: 0 },
+    });
+    getInstanceModels.mockResolvedValue({
+      success: true,
+      result: [{ registry_key: "mask2former", name: "Mask2Former", trainable: true, training_parameters: [] }],
+    });
+    getInstanceTrainingRuns.mockResolvedValue({ runs: [] });
+    startInstanceTraining.mockResolvedValue({ task_id: "task-zero-annotation" });
+    streamInstanceTrainingProgress.mockReturnValue({ abort: vi.fn() });
+  });
+
+  it("disables and excludes zero-count labels from the default and Select all selections", async () => {
+    render(<ModelTrainingPage />);
+
+    const startButton = await screen.findByRole("button", { name: /start training/i });
+    const annotated = screen.getByRole("checkbox", { name: /annotated/i });
+    const empty = screen.getByRole("checkbox", { name: /empty/i });
+
+    expect(annotated).toBeChecked();
+    expect(empty).toBeDisabled();
+    expect(empty).not.toBeChecked();
+    expect(screen.getByText("No reviewed annotations")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
+    fireEvent.click(screen.getByRole("button", { name: /select all/i }));
+
+    expect(annotated).toBeChecked();
+    expect(empty).not.toBeChecked();
+    expect(startButton).toBeEnabled();
+  });
+
+  it("does not call the training API when counts are zero or missing", async () => {
+    getInstanceLabelAnnotationCounts.mockResolvedValue({
+      success: true,
+      reviewed_annotation_counts: { 1: 0 },
+    });
+
+    render(<ModelTrainingPage />);
+
+    const startButton = await screen.findByRole("button", { name: /start training/i });
+    await waitFor(() => expect(startButton).toBeDisabled());
+    fireEvent.click(startButton);
+
+    expect(startInstanceTraining).not.toHaveBeenCalled();
+  });
+
+  it("keeps training disabled while counts are loading", async () => {
+    let resolveCounts;
+    getInstanceLabelAnnotationCounts.mockReturnValue(new Promise((resolve) => {
+      resolveCounts = resolve;
+    }));
+
+    render(<ModelTrainingPage />);
+
+    const startButton = await screen.findByRole("button", { name: /start training/i });
+    expect(startButton).toBeDisabled();
+    expect(screen.getByText(/training will be available once they finish loading/i)).toBeInTheDocument();
+    fireEvent.click(startButton);
+    expect(startInstanceTraining).not.toHaveBeenCalled();
+
+    resolveCounts({ success: true, reviewed_annotation_counts: { 1: 4, 2: 0 } });
+    await waitFor(() => expect(startButton).toBeEnabled());
+  });
+
+  it("keeps training disabled and explains count-fetch failure", async () => {
+    getInstanceLabelAnnotationCounts.mockRejectedValue(new Error("Counts unavailable"));
+
+    render(<ModelTrainingPage />);
+
+    const startButton = await screen.findByRole("button", { name: /start training/i });
+    expect(startButton).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("training is disabled until they can be loaded");
+    fireEvent.click(startButton);
+
+    expect(startInstanceTraining).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows no trainable labels when every reviewed count is zero", async () => {
+    getInstanceLabelAnnotationCounts.mockResolvedValue({
+      success: true,
+      reviewed_annotation_counts: { 1: 0, 2: 0 },
+    });
+
+    render(<ModelTrainingPage />);
+
+    const startButton = await screen.findByRole("button", { name: /start training/i });
+    await waitFor(() => expect(startButton).toBeDisabled());
+    expect(screen.getByText(/no trainable labels yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /select all/i })).toBeDisabled();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    expect(screen.getAllByRole("checkbox").every((checkbox) => checkbox.disabled)).toBe(true);
+    fireEvent.click(startButton);
+
+    expect(startInstanceTraining).not.toHaveBeenCalled();
+  });
+
+  it("ignores delayed label responses from a previous dataset", async () => {
+    let resolveFirstDataset;
+    fetchLabels.mockImplementation((datasetId) => {
+      if (datasetId === "42") {
+        return new Promise((resolve) => {
+          resolveFirstDataset = resolve;
+        });
+      }
+      return Promise.resolve({
+        labels: { id_to_label_object: { 3: { id: 3, name: "dataset-b-label" } } },
+      });
+    });
+    getInstanceLabelAnnotationCounts.mockResolvedValue({
+      success: true,
+      reviewed_annotation_counts: { 3: 2 },
+    });
+
+    const { rerender } = render(<ModelTrainingPage />);
+    mockRoute.datasetId = "43";
+    rerender(<ModelTrainingPage />);
+
+    expect(await screen.findByText("dataset-b-label")).toBeInTheDocument();
+    await act(async () => {
+      resolveFirstDataset({
+        labels: { id_to_label_object: { 1: { id: 1, name: "dataset-a-label" } } },
+      });
+    });
+
+    expect(screen.queryByText("dataset-a-label")).not.toBeInTheDocument();
+    expect(screen.getByText("dataset-b-label")).toBeInTheDocument();
+  });
+});
+
 describe("Task 4: Active run restoration after refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
