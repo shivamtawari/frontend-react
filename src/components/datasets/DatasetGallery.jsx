@@ -5,6 +5,7 @@ import DataManagementView from "./gallery/DataManagementView";
 import LabelManagementView from "./gallery/LabelManagementView";
 import ManagementCardsView from "./gallery/ManagementCardsView";
 import CocoExportModal from "./gallery/CocoExportModal";
+import IquanaExportModal from "./IquanaExportModal";
 import AnnotationQueueModal from "./gallery/AnnotationQueueModal";
 import DatasetManagementLayout from "./gallery/DatasetManagementLayout";
 import * as api from "../../api";
@@ -29,6 +30,7 @@ const DatasetGallery = () => {
   const galleryActions = useGalleryActions();
 
   const [showCocoModal, setShowCocoModal] = useState(false);
+  const [showIquanaModal, setShowIquanaModal] = useState(false);
   const [showQueueModal, setShowQueueModal] = useState(false);
 
   const { can } = usePermissions(currentDataset);
@@ -187,6 +189,7 @@ const DatasetGallery = () => {
             onAnnotationClick={handleAnnotationClick}
             onLabelManagementClick={handleLabelManagementClick}
             onExportCocoClick={() => setShowCocoModal(true)}
+            onExportIquanaClick={() => setShowIquanaModal(true)}
             onModelTrainingClick={handleModelTrainingClick}
             onModelOrchestrationClick={handleModelOrchestrationClick}
             onBatchInferenceClick={handleBatchInferenceClick}
@@ -220,6 +223,12 @@ const DatasetGallery = () => {
       <CocoExportModal
         isOpen={showCocoModal}
         onClose={() => setShowCocoModal(false)}
+        dataset={dataset}
+      />
+
+      <IquanaExportModal
+        isOpen={showIquanaModal}
+        onClose={() => setShowIquanaModal(false)}
         dataset={dataset}
       />
 

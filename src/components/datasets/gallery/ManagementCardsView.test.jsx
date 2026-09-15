@@ -81,3 +81,47 @@ describe("ManagementCardsView - Model Orchestration card", () => {
         expect(screen.queryByText("Model Orchestration")).not.toBeInTheDocument();
     });
 });
+
+describe("ManagementCardsView - Export IQUANA ZIP card", () => {
+    const dataset = { id: 101, name: "Test Dataset" };
+
+    it("renders Export IQUANA ZIP card when user has EXPORT_ANNOTATIONS and EXPORT_IMAGES permissions", () => {
+        mockUsePermissions.mockReturnValue({
+            can: (perm) => [Permission.EXPORT_ANNOTATIONS, Permission.EXPORT_IMAGES].includes(perm),
+            canAny: () => false,
+            role: "member",
+        });
+
+        const onExportIquanaClick = vi.fn();
+
+        render(
+            <ManagementCardsView
+                dataset={dataset}
+                onExportIquanaClick={onExportIquanaClick}
+            />
+        );
+
+        const cardTitle = screen.getByText("Export IQUANA ZIP");
+        expect(cardTitle).toBeInTheDocument();
+
+        fireEvent.click(cardTitle);
+        expect(onExportIquanaClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not render Export IQUANA ZIP card when user lacks EXPORT_IMAGES permission", () => {
+        mockUsePermissions.mockReturnValue({
+            can: (perm) => perm === Permission.EXPORT_ANNOTATIONS,
+            canAny: () => false,
+            role: "annotator",
+        });
+
+        render(
+            <ManagementCardsView
+                dataset={dataset}
+                onExportIquanaClick={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByText("Export IQUANA ZIP")).not.toBeInTheDocument();
+    });
+});

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useDataset } from "../../contexts/DatasetContext";
-import { Plus, FolderOpen, User, UserCog } from "lucide-react";
+import { Plus, FolderOpen, User, UserCog, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -9,6 +9,7 @@ import AuthButtons from "../auth/AuthButtons";
 import DocsLink from "../ui/DocsLink";
 import ReportBugLink from "../ui/ReportBugLink";
 import AddDatasetModal from "./AddDatasetModal";
+import IquanaImportModal from "./IquanaImportModal";
 import UploadingModal from "./UploadingDatasetModal"
 import CreateLabelsModal from "./CreateLabelsModal";
 import DeleteDatasetModal from "./DeleteDatasetModal";
@@ -36,6 +37,7 @@ const DatasetsOverview = ({ onOpenDataset }) => {
     fetchDatasets,
   } = useDataset();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showLabelsModal, setShowLabelsModal] = useState(false);
   const [selectedDatasetForLabels, setSelectedDatasetForLabels] = useState(null);
   const [datasetImages, setDatasetImages] = useState({});
@@ -252,13 +254,23 @@ const DatasetsOverview = ({ onOpenDataset }) => {
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-3xl font-bold text-t1">Datasets</h2>
           {canCreateDatasets && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center space-x-2 bg-accent text-onAccent px-6 py-3 rounded-lg hover:brightness-110 transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Add new dataset</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center space-x-2 bg-hv hover:bg-hv2 text-t1 border border-ln px-5 py-3 rounded-lg transition-colors font-medium text-sm"
+                title="Import dataset from an IQUANA archive (.zip)"
+              >
+                <Upload className="w-4 h-4 text-accent" />
+                <span>Import IQUANA</span>
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center space-x-2 bg-accent text-onAccent px-6 py-3 rounded-lg hover:brightness-110 transition-colors font-medium text-sm"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add new dataset</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -286,14 +298,23 @@ const DatasetsOverview = ({ onOpenDataset }) => {
             {canCreateDatasets ? (
               <>
                 <p className="text-t2 mb-6">
-                  Get started by creating your first dataset
+                  Get started by creating your first dataset or importing an existing archive
                 </p>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="bg-accent text-onAccent px-6 py-3 rounded-lg hover:brightness-110 transition-colors"
-                >
-                  Create your first dataset
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="flex items-center space-x-2 bg-hv hover:bg-hv2 text-t1 border border-ln px-5 py-3 rounded-lg transition-colors font-medium text-sm"
+                  >
+                    <Upload className="w-4 h-4 text-accent" />
+                    <span>Import IQUANA archive</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-accent text-onAccent px-6 py-3 rounded-lg hover:brightness-110 transition-colors font-medium text-sm"
+                  >
+                    Create your first dataset
+                  </button>
+                </div>
               </>
             ) : (
               // Guests can only work in datasets they were invited to, so telling
@@ -357,6 +378,20 @@ const DatasetsOverview = ({ onOpenDataset }) => {
           onLabelsCreated={handleLabelsCreated}
         />
       )}
+
+      {/* Import Dataset Archive Modal */}
+      <IquanaImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportComplete={() => {
+          fetchDatasets();
+        }}
+        onNavigateOpen={(importResult) => {
+          if (importResult?.dataset_id) {
+            navigate(`/dataset/${importResult.dataset_id}/datamanagement`);
+          }
+        }}
+      />
 
       {/* Delete Confirmation Modal */}
       <DeleteDatasetModal
