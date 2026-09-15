@@ -79,9 +79,9 @@ const IquanaImportModal = ({
 
     try {
       const response = await importIquanaArchive(selectedFile, overrideName);
-      setResult(response);
       onImportComplete?.(response);
       onSuccess?.(response);
+      handleResetAndClose();
     } catch (err) {
       // Keep selectedFile intact so user can adjust name on 409 conflict or retry
       setError(err.message || "Failed to import dataset archive.");

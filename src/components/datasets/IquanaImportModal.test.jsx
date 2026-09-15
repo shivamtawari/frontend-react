@@ -71,18 +71,16 @@ describe("IquanaImportModal", () => {
     expect(screen.getByText("Please select a valid .zip file.")).toBeInTheDocument();
   });
 
-  it("submits import request, triggers onImportComplete immediately, and onNavigateOpen on open", async () => {
+  it("submits import request, triggers onImportComplete and closes modal on success", async () => {
     const mockResponse = {
       success: true,
       message: "Dataset imported successfully.",
       dataset_id: 105,
       dataset_name: "Imported Coral Survey",
       config_applied: true,
-      warnings: ["Imported dataset detached 2 source actor record(s)."],
     };
     api.importIquanaArchive.mockResolvedValueOnce(mockResponse);
     const onImportComplete = vi.fn();
-    const onNavigateOpen = vi.fn();
 
     render(
       <IquanaImportModal
@@ -90,7 +88,6 @@ describe("IquanaImportModal", () => {
         onClose={onClose}
         onSuccess={onSuccess}
         onImportComplete={onImportComplete}
-        onNavigateOpen={onNavigateOpen}
       />
     );
 
@@ -104,16 +101,9 @@ describe("IquanaImportModal", () => {
     await waitFor(() => {
       expect(api.importIquanaArchive).toHaveBeenCalledWith(file, "");
       expect(onImportComplete).toHaveBeenCalledWith(mockResponse);
-      expect(screen.getByText("Dataset Imported Successfully")).toBeInTheDocument();
-      expect(screen.getByText("Imported Coral Survey")).toBeInTheDocument();
-      expect(screen.getByText("#105")).toBeInTheDocument();
-      expect(screen.getByText("Applied from archive")).toBeInTheDocument();
-      expect(screen.getByText("Imported dataset detached 2 source actor record(s).")).toBeInTheDocument();
+      expect(onSuccess).toHaveBeenCalledWith(mockResponse);
+      expect(onClose).toHaveBeenCalled();
     });
-
-    const openBtn = screen.getByRole("button", { name: /open dataset/i });
-    fireEvent.click(openBtn);
-    expect(onNavigateOpen).toHaveBeenCalledWith(mockResponse);
   });
 
   it("preserves file selection on 409 conflict error so user can adjust name", async () => {
