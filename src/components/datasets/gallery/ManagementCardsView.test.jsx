@@ -82,46 +82,53 @@ describe("ManagementCardsView - Model Orchestration card", () => {
     });
 });
 
-describe("ManagementCardsView - Export IQUANA ZIP card", () => {
+describe("ManagementCardsView - Export Dataset card", () => {
     const dataset = { id: 101, name: "Test Dataset" };
 
-    it("renders Export IQUANA ZIP card when user has EXPORT_ANNOTATIONS and EXPORT_IMAGES permissions", () => {
-        mockUsePermissions.mockReturnValue({
-            can: (perm) => [Permission.EXPORT_ANNOTATIONS, Permission.EXPORT_IMAGES].includes(perm),
-            canAny: () => false,
-            role: "member",
-        });
-
-        const onExportIquanaClick = vi.fn();
-
-        render(
-            <ManagementCardsView
-                dataset={dataset}
-                onExportIquanaClick={onExportIquanaClick}
-            />
-        );
-
-        const cardTitle = screen.getByText("Export IQUANA ZIP");
-        expect(cardTitle).toBeInTheDocument();
-
-        fireEvent.click(cardTitle);
-        expect(onExportIquanaClick).toHaveBeenCalledTimes(1);
-    });
-
-    it("does not render Export IQUANA ZIP card when user lacks EXPORT_IMAGES permission", () => {
+    it("renders Export Dataset card when user has EXPORT_ANNOTATIONS permission and triggers click", () => {
         mockUsePermissions.mockReturnValue({
             can: (perm) => perm === Permission.EXPORT_ANNOTATIONS,
             canAny: () => false,
             role: "annotator",
         });
 
+        const onExportDatasetClick = vi.fn();
+
         render(
             <ManagementCardsView
                 dataset={dataset}
-                onExportIquanaClick={vi.fn()}
+                onExportDatasetClick={onExportDatasetClick}
             />
         );
 
+        const cardTitle = screen.getByText("Export Dataset");
+        expect(cardTitle).toBeInTheDocument();
+        expect(screen.getByText("Download in IQUANA archive or COCO format.")).toBeInTheDocument();
+
+        // Ensure old separate cards do not exist
+        expect(screen.queryByText("Export to COCO")).not.toBeInTheDocument();
+        expect(screen.queryByText("Export IQUANA ZIP")).not.toBeInTheDocument();
+
+        fireEvent.click(cardTitle);
+        expect(onExportDatasetClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not render Export Dataset card when user lacks EXPORT_ANNOTATIONS permission", () => {
+        mockUsePermissions.mockReturnValue({
+            can: (perm) => perm === Permission.EXPORT_IMAGES,
+            canAny: () => false,
+            role: "viewer",
+        });
+
+        render(
+            <ManagementCardsView
+                dataset={dataset}
+                onExportDatasetClick={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByText("Export Dataset")).not.toBeInTheDocument();
+        expect(screen.queryByText("Export to COCO")).not.toBeInTheDocument();
         expect(screen.queryByText("Export IQUANA ZIP")).not.toBeInTheDocument();
     });
 });

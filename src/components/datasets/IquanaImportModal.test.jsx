@@ -128,4 +128,87 @@ describe("IquanaImportModal", () => {
       expect(screen.getByText("archive.zip")).toBeInTheDocument();
     });
   });
+
+  it("closes after a successful import even when the response contains warnings", async () => {
+    const mockResponseWithWarnings = {
+      success: true,
+      message: "Dataset imported successfully.",
+      dataset_id: 106,
+      dataset_name: "Survey with Warnings",
+      config_applied: false,
+      warnings: [
+        "12 reviewer approvals could not be matched and were detached.",
+        "Model 'sam2' referenced in config is not available on this server.",
+      ],
+    };
+    api.importIquanaArchive.mockResolvedValueOnce(mockResponseWithWarnings);
+    const onImportComplete = vi.fn();
+    render(
+      <IquanaImportModal
+        isOpen={true}
+        onClose={onClose}
+        onSuccess={onSuccess}
+        onImportComplete={onImportComplete}
+      />
+    );
+
+    const file = new File(["zip data"], "archive.zip", { type: "application/zip" });
+    const fileInput = document.querySelector('input[type="file"]');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    const startBtn = screen.getByRole("button", { name: /start import/i });
+    fireEvent.click(startBtn);
+
+    await waitFor(() => {
+      expect(api.importIquanaArchive).toHaveBeenCalledWith(file, "");
+      expect(onImportComplete).toHaveBeenCalledWith(mockResponseWithWarnings);
+      expect(onSuccess).toHaveBeenCalledWith(mockResponseWithWarnings);
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  it("prevents dismissal via backdrop, header X, or cancel button during active import", async () => {
+    let resolveImport;
+    const importPromise = new Promise((resolve) => {
+      resolveImport = resolve;
+    });
+    api.importIquanaArchive.mockReturnValueOnce(importPromise);
+
+    render(
+      <IquanaImportModal isOpen={true} onClose={onClose} onSuccess={onSuccess} />
+    );
+
+    const file = new File(["zip data"], "archive.zip", { type: "application/zip" });
+    const fileInput = document.querySelector('input[type="file"]');
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    const startBtn = screen.getByRole("button", { name: /start import/i });
+    fireEvent.click(startBtn);
+
+    // Now actively importing
+    expect(screen.getByText("Importing Dataset...")).toBeInTheDocument();
+
+    // Try clicking backdrop
+    const backdrop = document.querySelector(".bg-scrim");
+    fireEvent.click(backdrop);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Try clicking header close button
+    const closeBtn = screen.getByTitle("Close");
+    expect(closeBtn).toBeDisabled();
+    fireEvent.click(closeBtn);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Clean up unresolved promise
+    resolveImport({
+      success: true,
+      dataset_id: 107,
+      dataset_name: "Cleaned Survey",
+      config_applied: true,
+      warnings: [],
+    });
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
 });

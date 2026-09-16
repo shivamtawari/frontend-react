@@ -386,11 +386,6 @@ const DatasetsOverview = ({ onOpenDataset }) => {
         onImportComplete={() => {
           fetchDatasets();
         }}
-        onNavigateOpen={(importResult) => {
-          if (importResult?.dataset_id) {
-            navigate(`/dataset/${importResult.dataset_id}/datamanagement`);
-          }
-        }}
       />
 
       {/* Delete Confirmation Modal */}

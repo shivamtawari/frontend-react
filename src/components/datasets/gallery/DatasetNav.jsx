@@ -28,7 +28,7 @@ import { Permission } from "../../../utils/permissions";
  *
  * The groups mirror `ManagementCardsView` deliberately — same headings, same
  * icons — so the menu reads as the card grid folded up. Only destinations live
- * here: the cards also carry actions that open a modal (Export to COCO, the
+ * here: the cards also carry actions that open a modal (Export Dataset, the
  * annotation queue builder), which have no URL to point at.
  */
 const NAV_GROUPS = [

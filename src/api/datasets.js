@@ -131,6 +131,7 @@ export const getSampleImages = async (datasetId, limit = 4) => {
  * @param {boolean} [options.excludeUnreviewed=true] - Drop contours that haven't been reviewed.
  * @param {boolean} [options.excludeNotFullyAnnotated=true] - Drop images whose masks aren't fully annotated.
  * @param {"all"|"leaves"|"top_level"} [options.contourSelection="all"] - Which contours of the hierarchy to emit.
+ * @param {Array<number>|null} [options.labelIds=null] - Optional array of label IDs to restrict export.
  */
 export const downloadCocoExport = async (
     datasetId,
@@ -139,6 +140,7 @@ export const downloadCocoExport = async (
         excludeUnreviewed = true,
         excludeNotFullyAnnotated = true,
         contourSelection = "all",
+        labelIds = null,
     } = {}
 ) => {
     if (!datasetId) {
@@ -156,6 +158,9 @@ export const downloadCocoExport = async (
     };
     if (includeImages) {
         params.include_images = true;
+    }
+    if (Array.isArray(labelIds) && labelIds.length > 0) {
+        params.label_ids = labelIds.join(",");
     }
 
     const url = buildUrl(API_BASE_URL, path, params);
@@ -202,12 +207,13 @@ export const downloadCocoExport = async (
  *
  * @param {number} datasetId
  * @param {Object} [options]
+ * @param {boolean} [options.includeImages=true] - Bundle images (full mode) vs annotations only.
  * @param {boolean} [options.includeConfig=false] - Whether to include internal configuration (config.json).
  * @param {string} [options.datasetName] - Fallback dataset name for the filename.
  */
 export const downloadIquanaArchive = async (
     datasetId,
-    { includeConfig = false, datasetName } = {}
+    { includeImages = true, includeConfig = false, datasetName } = {}
 ) => {
     if (!datasetId) {
         throw new Error("Dataset ID is required");
@@ -215,6 +221,7 @@ export const downloadIquanaArchive = async (
 
     const path = `/datasets/${datasetId}/iquana`;
     const params = {
+        include_images: Boolean(includeImages),
         include_config: Boolean(includeConfig),
     };
 
@@ -235,7 +242,8 @@ export const downloadIquanaArchive = async (
     const blob = await response.blob();
     const disposition = response.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="?([^"]+)"?/);
-    const fallback = datasetName ? `${datasetName}.zip` : `dataset_${datasetId}.zip`;
+    const suffix = includeImages ? "" : "_annotations";
+    const fallback = datasetName ? `${datasetName}${suffix}.zip` : `dataset_${datasetId}${suffix}.zip`;
     const filename = match ? match[1] : fallback;
 
     const blobUrl = URL.createObjectURL(blob);

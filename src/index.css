@@ -134,6 +134,33 @@ select option:disabled {
   animation: slide-up 0.18s ease-out forwards;
 }
 
+/* Keep the format-specific export menu from snapping to its new height when
+   switching between IQUANA and COCO. The keyed panel remounts on a format
+   change, so the height, fade, and small vertical movement animate together. */
+@keyframes export-format-panel-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    max-height: 60rem;
+    transform: translateY(0);
+  }
+}
+
+.export-format-panel {
+  overflow: hidden;
+  animation: export-format-panel-in 0.24s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-format-panel {
+    animation: none;
+  }
+}
+
 @keyframes fade-in {
   0% {
     opacity: 0;

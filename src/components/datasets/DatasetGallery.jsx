@@ -4,8 +4,7 @@ import { useDataset } from "../../contexts/DatasetContext";
 import DataManagementView from "./gallery/DataManagementView";
 import LabelManagementView from "./gallery/LabelManagementView";
 import ManagementCardsView from "./gallery/ManagementCardsView";
-import CocoExportModal from "./gallery/CocoExportModal";
-import IquanaExportModal from "./IquanaExportModal";
+import DatasetExportModal from "./gallery/DatasetExportModal";
 import AnnotationQueueModal from "./gallery/AnnotationQueueModal";
 import DatasetManagementLayout from "./gallery/DatasetManagementLayout";
 import * as api from "../../api";
@@ -29,8 +28,7 @@ const DatasetGallery = () => {
   const labels = useGalleryLabels();
   const galleryActions = useGalleryActions();
 
-  const [showCocoModal, setShowCocoModal] = useState(false);
-  const [showIquanaModal, setShowIquanaModal] = useState(false);
+  const [showDatasetExportModal, setShowDatasetExportModal] = useState(false);
   const [showQueueModal, setShowQueueModal] = useState(false);
 
   const { can } = usePermissions(currentDataset);
@@ -188,8 +186,7 @@ const DatasetGallery = () => {
             onQuantificationsClick={handleQuantificationsClick}
             onAnnotationClick={handleAnnotationClick}
             onLabelManagementClick={handleLabelManagementClick}
-            onExportCocoClick={() => setShowCocoModal(true)}
-            onExportIquanaClick={() => setShowIquanaModal(true)}
+            onExportDatasetClick={() => setShowDatasetExportModal(true)}
             onModelTrainingClick={handleModelTrainingClick}
             onModelOrchestrationClick={handleModelOrchestrationClick}
             onBatchInferenceClick={handleBatchInferenceClick}
@@ -220,15 +217,9 @@ const DatasetGallery = () => {
         ) : null}
       </div>
 
-      <CocoExportModal
-        isOpen={showCocoModal}
-        onClose={() => setShowCocoModal(false)}
-        dataset={dataset}
-      />
-
-      <IquanaExportModal
-        isOpen={showIquanaModal}
-        onClose={() => setShowIquanaModal(false)}
+      <DatasetExportModal
+        isOpen={showDatasetExportModal}
+        onClose={() => setShowDatasetExportModal(false)}
         dataset={dataset}
       />
 
