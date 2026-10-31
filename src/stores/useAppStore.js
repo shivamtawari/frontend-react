@@ -59,8 +59,11 @@ const useAppStore = create()(
           images: [],
           labels: [],
           stats: {},
+          labelsLoaded: false,
+          statsLoaded: false,
           loadingData: false,
           error: null,
+          requestGeneration: 0,
           
           // ImageGallery state  
           searchTerm: '',
@@ -210,9 +213,30 @@ const useAppStore = create()(
               state.gallery.images = [];
               state.gallery.labels = [];
               state.gallery.stats = {};
+              state.gallery.labelsLoaded = false;
+              state.gallery.statsLoaded = false;
+              state.gallery.error = null;
+              state.gallery.loadingData = false;
+              state.gallery.requestGeneration = (state.gallery.requestGeneration || 0) + 1;
             }
             state.gallery.currentDataset = dataset;
           }),
+
+          nextRequestGeneration: (datasetId = null) => {
+            let nextGen = null;
+            set(state => {
+              if (datasetId != null && state.gallery.currentDataset?.id !== datasetId) {
+                return;
+              }
+              state.gallery.requestGeneration = (state.gallery.requestGeneration || 0) + 1;
+              nextGen = state.gallery.requestGeneration;
+            });
+            return nextGen;
+          },
+
+          getRequestGeneration: () => {
+            return get().gallery.requestGeneration || 0;
+          },
           
           setImages: (images) => set(state => {
             state.gallery.images = images;
@@ -220,10 +244,20 @@ const useAppStore = create()(
           
           setLabels: (labels) => set(state => {
             state.gallery.labels = labels;
+            state.gallery.labelsLoaded = true;
           }),
           
           setStats: (stats) => set(state => {
             state.gallery.stats = stats;
+            state.gallery.statsLoaded = true;
+          }),
+
+          setLabelsLoaded: (loaded) => set(state => {
+            state.gallery.labelsLoaded = loaded;
+          }),
+
+          setStatsLoaded: (loaded) => set(state => {
+            state.gallery.statsLoaded = loaded;
           }),
           
           setLoadingData: (loading) => set(state => {
@@ -386,8 +420,11 @@ const useAppStore = create()(
             state.gallery.images = [];
             state.gallery.labels = [];
             state.gallery.stats = {};
+            state.gallery.labelsLoaded = false;
+            state.gallery.statsLoaded = false;
             state.gallery.loadingData = false;
             state.gallery.error = null;
+            state.gallery.requestGeneration = (state.gallery.requestGeneration || 0) + 1;
             state.gallery.searchTerm = '';
             state.gallery.filterStatus = 'all';
             state.gallery.filterPhase = 'overall';

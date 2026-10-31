@@ -44,6 +44,8 @@ export const useGalleryCurrentDataset = () => useAppStore(state => state.gallery
 export const useGalleryImages = () => useAppStore(state => state.gallery.images);
 export const useGalleryLabels = () => useAppStore(state => state.gallery.labels);
 export const useGalleryStats = () => useAppStore(state => state.gallery.stats);
+export const useGalleryLabelsLoaded = () => useAppStore(state => state.gallery.labelsLoaded);
+export const useGalleryStatsLoaded = () => useAppStore(state => state.gallery.statsLoaded);
 export const useGalleryLoadingData = () => useAppStore(state => state.gallery.loadingData);
 export const useGalleryError = () => useAppStore(state => state.gallery.error);
 

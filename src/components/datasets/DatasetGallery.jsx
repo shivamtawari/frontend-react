@@ -16,6 +16,7 @@ import {
   useGalleryLabels,
   useGalleryActions 
 } from "../../stores/selectors";
+import useAppStore from "../../stores/useAppStore";
 
 const DatasetGallery = () => {
   const { datasetId } = useParams();
@@ -111,11 +112,26 @@ const DatasetGallery = () => {
   // returns image_id not id; without normalization data-image-id is undefined
   // and the IntersectionObserver cannot load thumbnails)
   const refreshImages = useCallback(async () => {
-    if (!dataset) return;
+    if (!dataset?.id) return;
+    const targetDatasetId = dataset.id;
+    // Check dataset ownership before advancing the request generation:
+    // If the active dataset in the store has changed (e.g. user navigated to B
+    // while an upload in A was in flight), do not advance generation and do not refresh.
+    if (useAppStore.getState().gallery.currentDataset?.id !== targetDatasetId) {
+      return;
+    }
+    const generation = galleryActions.nextRequestGeneration(targetDatasetId);
+    if (generation == null) return;
     
     try {
-      const items = await fetchGalleryItems(dataset.id);
-      if (items) galleryActions.setImages(items);
+      const items = await fetchGalleryItems(targetDatasetId);
+      const state = useAppStore.getState();
+      if (
+        state.gallery.currentDataset?.id === targetDatasetId &&
+        state.gallery.requestGeneration === generation
+      ) {
+        if (items) galleryActions.setImages(items);
+      }
     } catch (err) {
       console.error("Error refreshing images:", err);
     }

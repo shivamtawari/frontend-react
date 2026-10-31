@@ -68,6 +68,24 @@ describe("UploadModal", () => {
     expect(api.uploadImage).toHaveBeenCalledWith(expect.objectContaining({ name: "a.png" }), 7);
   });
 
+  it("labels a failed attempt as retryable and accepts a retry", async () => {
+    const onSuccess = vi.fn();
+    api.uploadImage
+      .mockRejectedValueOnce(new Error("unsupported TIFF"))
+      .mockResolvedValueOnce({ success: true });
+    const { container } = render(<Harness onSuccess={onSuccess} />);
+    await drop(container, ["scan.png"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry failed uploads" })).toBeInTheDocument());
+    expect(screen.getByText("Upload attempt finished")).toBeInTheDocument();
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry failed uploads" }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(api.uploadImage).toHaveBeenCalledTimes(2);
+  });
+
   it("disables Upload when only unsupported files are queued, and can remove them", async () => {
     const { container } = render(<Harness />);
     await drop(container, ["notes.pdf"]);

@@ -134,7 +134,9 @@ const ImageGallery = ({ images, onImageClick, dataset, onDeleteImage, onImagesUp
     } else {
       window.location.reload();
     }
-  }, [galleryActions, onImagesUpdated]));
+  }, [galleryActions, onImagesUpdated]), useCallback(() => {
+    onImagesUpdated?.();
+  }, [onImagesUpdated]));
 
   const handleSearchChange = useCallback((term) => {
     galleryActions.setSearchTerm(term);

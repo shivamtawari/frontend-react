@@ -30,6 +30,10 @@ const UploadModal = ({
 
   const unsupported = uploadingFiles.filter((file) => kindOf(file) === 'unsupported');
   const uploadable = uploadingFiles.length - unsupported.length;
+  const completedProgressLabel = uploadErrors.length > 0 ? 'Upload attempt finished' : 'Upload completed!';
+  let uploadButtonLabel = 'Upload';
+  if (isUploading) uploadButtonLabel = 'Uploading...';
+  else if (uploadErrors.length > 0 && uploadable > 0) uploadButtonLabel = 'Retry failed uploads';
 
   const handleClose = () => {
     onClear();
@@ -131,7 +135,7 @@ const UploadModal = ({
                 <div className="flex justify-between text-sm text-t2 mb-2">
                   <span>
                     {uploadProgress.current === uploadProgress.total
-                      ? 'Upload completed!'
+                      ? completedProgressLabel
                       : `Uploading ${uploadProgress.total} files...`}
                   </span>
                   <span>
@@ -175,7 +179,7 @@ const UploadModal = ({
                 disabled={uploadable === 0 || isUploading}
                 className="px-4 py-2 text-sm text-onAccent bg-accent rounded-lg hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isUploading ? 'Uploading...' : 'Upload'}
+                {uploadButtonLabel}
               </button>
             </div>
           </div>
@@ -186,4 +190,3 @@ const UploadModal = ({
 };
 
 export default UploadModal;
-
